@@ -76,36 +76,92 @@ from encryption_handler import EncryptionHandler
 class PacketHandler:
 
 	def __init__(self):
-		self.compression_handler = CompressionHandler(self)
-		self.mac_handler = MAC_Handler(self)
 		self.encryption_handler = EncryptionHandler(self)
+		self.mac_handler = MAC_Handler(self)
+		self.compression_handler = CompressionHandler(self)
 
 		# Sequence number always starts at zero
-		self._sequence_number = 0
+		self._incoming_sequence_number = 0
+		self._outgoing_sequence_number = 0
+
+		# Used to skip resetting algs when generating new keys
+		self.algorithms_set = False
 
 
-	def set_mac_alg(self, alg):
-		# TODO: Check if algorithm one of the valid ones?
-		self.mac_handler.set_algorithm(alg)
-	def set_mac_key(self, key):
-		self.mac_handler.set_key(key)
-	def set_compression_alg(self, alg):
-		# TODO: Check if algorithm one of the valid ones?
-		self.compression_handler.set_algorithm(alg)
-	def set_encryption_alg(self, alg):
-		# TODO: Check if algorithm one of the valid ones?
-		self.encryption_handler.set_algorithm(alg)
-	def set_encryption_key(self, key):
-		self.encryption_handler.set_key(key)
+	def prepare_algorithms(self,
+		enc_c_to_s, enc_s_to_c,
+		mac_c_to_s, mac_s_to_c,
+		com_c_to_s, com_s_to_c
+	):
+		self.encryption_handler.prepare_decryption_algorithm(enc_c_to_s)
+		self.encryption_handler.prepare_encryption_algorithm(enc_s_to_c)
+		self.mac_handler.prepare_check_algorithm(mac_c_to_s)
+		self.mac_handler.prepare_authenticate_algorithm(mac_s_to_c)
+
+		# TODO: Handle com_c_to_s
+		self.compression_handler.prepare_algorithm(com_s_to_c)
+	def set_prepared_algorithms(self):
+		if self.algorithms_set:
+			return
+
+		self.encryption_handler.set_prepared_decryption_algorithm()
+		self.encryption_handler.set_prepared_encryption_algorithm()
+		self.mac_handler.set_prepared_check_algorithm()
+		self.mac_handler.set_prepared_authenticate_algorithm()
+
+		# TODO: Handle com_c_to_s
+		self.compression_handler.set_prepared_algorithm()
+
+		self.algorithms_set = True
+
+
+	def set_keys(self,
+		iv_c_to_s, iv_s_to_c,
+		enc_c_to_s, enc_s_to_c,
+		mac_c_to_s, mac_s_to_c
+	):
+		self.encryption_handler.set_decryption_iv(iv_c_to_s)
+		self.encryption_handler.set_encryption_iv(iv_s_to_c)
+		self.encryption_handler.set_decryption_key(enc_c_to_s)
+		self.encryption_handler.set_encryption_key(enc_s_to_c)
+
+		# TODO: Handle mac stuff
+		self.mac_handler.set_check_key(mac_c_to_s)
+		self.mac_handler.set_authenticate_key(mac_s_to_c)
+
+
+
+	# def set_mac_alg(self, alg):
+	# 	self.mac_handler.set_algorithm(alg)
+	# def set_mac_key(self, key):
+	# 	self.mac_handler.set_key(key)
+	# def set_compression_alg(self, alg):
+	# 	self.compression_handler.set_algorithm(alg)
+	# def set_encryption_alg(self, alg):
+	# 	self.encryption_handler.set_encryption_algorithm(alg)
+	# def set_encryption_key(self, key):
+	# 	self.encryption_handler.set_encryption_key(key)
+	# def set_decryption_alg(self, alg):
+	# 	self.encryption_handler.set_decryption_algorithm(alg)
+	# def set_decryption_key(self, key):
+	# 	self.encryption_handler.set_decryption_key(key)
+	# def set_decryption_iv(self, iv):
+	# 	self.encryption_handler.set_decryption_iv(iv)
 
 
 	@property
-	def block_size(self):
-		return self.encryption_handler.block_size
+	def encryption_block_size(self):
+		return self.encryption_handler.encryption_block_size
+	@property
+	def decryption_block_size(self):
+		return self.encryption_handler.decryption_block_size
+	@property
+	def mac_digest_length(self):
+		return self.mac_handler.digest_length
 
 
 	@property
-	def sequence_number(self):
+	def outgoing_sequence_number(self):
 		"""
 		sequence_number is an implicit packet sequence number
 		represented as uint32. The sequence_number is initialized
@@ -116,14 +172,22 @@ class PacketHandler:
 		2^32 packets. THe packet sequence number itself is not
 		included in the packet sent over the wire.
 		"""
-		return self._sequence_number
+		return self._outgoing_sequence_number
+	@property
+	def incoming_sequence_number(self):
+		return self._incoming_sequence_number
 
 
-	def increment_sequence_number(self):
+	def increment_incoming_sequence_number(self):
 		# Increment the sequence number. Wrap at 2**32
-		self._sequence_number += 1
-		if self._sequence_number == 2**32:
-			self._sequence_number = 0
+		self._incoming_sequence_number += 1
+		if self._incoming_sequence_number == 2**32:
+			self._incoming_sequence_number = 0
+	def increment_outgoing_sequence_number(self):
+		# Increment the sequence number. Wrap at 2**32
+		self._outgoing_sequence_number += 1
+		if self._outgoing_sequence_number == 2**32:
+			self._outgoing_sequence_number = 0
 
 
 	def new_packet(self, payload):
@@ -162,64 +226,125 @@ class PacketHandler:
 		# Start off with compressing payload
 		payload_b = self.compression_handler.compress(packet.payload)
 
-		# Next up, we can calculate the desired padding
-		block_size = self.block_size
-		unpadded_length = (
-			4 # packet length is int32, always 4 bytes
-			+ 1 # padding_length is stored in 1 byte
-			+ len(payload_b))
-		desired_length = max(
+		# Calculate the padding length
+		block_size = self.encryption_block_size
+		unpadded_len = len(payload_b) + 1 # +1 for padding length byte
+		desired_len = max( # Should be a multiple of block size
 			16, # Minimum packet size is 16 bytes
-			math.ceil(unpadded_length/block_size) * block_size)
-		padding_length = desired_length - unpadded_length
-		if padding_length < 4:
-			padding_length = padding_length + block_size
-		padding_length_b = struct.pack("B", padding_length)
+			math.ceil(unpadded_len/block_size) * block_size)
+		padding_len = desired_len - unpadded_len - 4 # -4 for packet len uint32
+		if padding_len < 4: # Minimum padding length is 4
+			padding_len += block_size
+		padding_len_b = struct.pack(">B", padding_len)
 
-		# And from that we know the packet length
-		packet_length = unpadded_length + padding_length
-		packet_length_b = struct.pack("I", packet_length)
+		# Calculate the packet length
+		packet_len = len(payload_b) + padding_len + 1
+		packet_len_b = struct.pack(">I", packet_len)
 
-		# We can calculate the padding
-		random_padding_b = os_urandom(padding_length)
+		# Generate the padding bytes. Should be random to reduce
+		#  information leaked through traffic analysis when encrypted
+		random_padding_b = os_urandom(padding_len)
 
+		# Join all the bytes together!
 		complete_packet = (
-			packet_length_b
-			+ padding_length_b
+			packet_len_b
+			+ padding_len_b
 			+ payload_b
 			+ random_padding_b)
 
-		# We can then calculate the mac
+		# Generate the mac
 		mac = self.mac_handler.calculate_mac(complete_packet)
 
-		# And encrypt what needs to be encrypted
+		# Encrypt the packet. Since it's a block cipher the length can
+		#  be read in the first block by itself so the len can be
+		#  encrypted too.
 		encrypted_packet = self.encryption_handler.encrypt(complete_packet)
 
-		# And return the bytes!
+		# Increment our sequence number
+		self.increment_outgoing_sequence_number()
+
+		# And return our bytes!
 		return encrypted_packet + mac
 
 
-		# uint32		packet_length
-		packet_length = packet.calc_packet_length()
-		packet_length_b = struct.pack("I", packet_length)
+	# TODO: Get rid of, or rewrite
+	def read_packet(self, raw):
+		# # Read from conn...?
+		# # TODO: How to handle this?
+		# raw = conn.read()
 
-		# byte		padding_length
-		padding_length = packet.calc_padding_length()
-		padding_length_b = struct.pack("B", padding_length)
+		# TODO:
+		"""
+		Implementations SHOULD
+		decrypt the length after receiving the first 8 (or cipher block size,
+		whichever is larger) bytes of a packet.
+		"""
 
-		# byte[n1]	payload; n1 = packet_length - padding_length - 1
-		...
+		# First separate the mac and the packet
+		if self.mac_handler.digest_length == 0:
+			# Need to separate this as otherwise we get [-0:] which == [0:]
+			encrypted_packet = raw
+			mac = b""
+		else:
+			encrypted_packet = raw[:-self.mac_handler.digest_length]
+			mac = raw[-self.mac_handler.digest_length:]
 
-		# byte[n2]	random padding; n2 = padding_length
-		...
+		# Decrypt the packet
+		complete_packet = self.encryption_handler.decrypt(encrypted_packet)
 
-		# byte[m]		mac (Message Authentication Code - MAC); m = mac_length
-		...
+		# Verify the mac
+		valid = self.mac_handler.verify_mac(complete_packet, mac)
+		print("Mac was valid? :", valid)
+
+		# Increment their sequence number
+		self.increment_incoming_sequence_number()
+
+		# Read the packet length and padding lengths
+		packet_length = struct.unpack(">I", complete_packet[:4])[0]
+		padding_length = struct.unpack(">B", complete_packet[4:5])[0]
+
+		# Strip the lengths and padding from the payload
+		payload_compressed = complete_packet[5:-padding_length]
+
+		# And decompress
+		payload = self.compression_handler.decompress(payload_compressed)
+
+		return payload
 
 
+	def read_packet_from_conn(self, conn):
+		block_size = self.decryption_block_size
 
+		# Read the first block for packet length
+		first_block_encrypted = conn.recv(block_size)
+		if first_block_encrypted == b"":
+			return None
 
+		first_block = self.encryption_handler.decrypt(first_block_encrypted)
+		packet_len = struct.unpack(">I", first_block[:4])[0]
 
+		# Read the remaining packet
+		remaining_to_read = packet_len - (block_size - 4)
+		# Above is to compensate that we read part of the packet already through
+		# the first block
+		remaining_packet_encrypted = conn.recv(remaining_to_read)
+		remaining_packet = self.encryption_handler.decrypt(remaining_packet_encrypted)
+		full_packet = first_block + remaining_packet
+
+		# Read the mac and verify it
+		mac = conn.recv(self.mac_digest_length)
+		valid = self.mac_handler.verify_mac(full_packet, mac)
+		if not valid:
+			print("MAC WAS NOT VALID????")
+
+		# Read the padding length
+		padding_length = struct.unpack(">B", full_packet[4:5])[0]
+
+		# Extract the compressed payload and decompress
+		payload_compressed = full_packet[5:-padding_length]
+		payload = self.compression_handler.decompress(payload_compressed)
+
+		return payload
 
 
 
@@ -239,10 +364,12 @@ class Packet:
 		return self.handler.compile_packet(self)
 
 
+	def __repr__(self):
+		return f"<Packet: {self.payload}>"
 
 
 
-if __name__ == "__main__":
+def test1():
 	print("Initialising a packet handler")
 	packet_handler = PacketHandler()
 
@@ -251,7 +378,7 @@ if __name__ == "__main__":
 	packet_handler.set_compression_alg("none")
 
 	mac_alg = "hmac-sha1"
-	mac_key = b"1234567890123456"
+	mac_key = b"12345678901234567890"
 	print(f"  Setting MAC to {mac_alg} with key {mac_key}")
 	packet_handler.set_mac_alg(mac_alg)
 	packet_handler.set_mac_key(mac_key)
@@ -261,6 +388,8 @@ if __name__ == "__main__":
 	print(f"  Setting encryption to {enc_alg} with key {enc_key}")
 	packet_handler.set_encryption_alg(enc_alg)
 	packet_handler.set_encryption_key(enc_key)
+	packet_handler.set_decryption_alg(enc_alg)
+	packet_handler.set_decryption_key(enc_key)
 
 	payload = b"Hello, World!"
 	print(f"Creating packet of payload:{payload}")
@@ -268,3 +397,94 @@ if __name__ == "__main__":
 	p_b = p.compile()
 
 	print(f"Result is:{p_b}")
+
+	print("")
+	print("Attempting to decrypt")
+	packet_handler.set_decryption_iv(packet_handler.encryption_handler.encryption_cipher.iv)
+	p = packet_handler.read_packet(p_b)
+	print(p)
+
+
+def test2():
+	h = PacketHandler()
+
+	print("kex_client_data")
+	# Overall length: 1592
+	# Packet Length:  1588
+	# Padding Length: 6
+	data_length = 1581 # 1587 - 6
+	kex_client_data = b"\xaa"*data_length
+	p = h.new_packet(kex_client_data)
+	p.compile()
+
+	print("kex_server_data")
+	# Overall length: 1080
+	# Packet Length:  1076
+	# Padding Length: 6
+	data_length = 1069 # 1075 - 6
+	kex_server_data = b"\xaa"*data_length
+	p = h.new_packet(kex_server_data)
+	p.compile()
+
+	print("dh_group_exchange_request")
+	# Overall length: 24
+	# Packet Length:  20
+	# Padding Length: 6
+	data_length = 13 # 19 - 6
+	dh_group_exchange_request = b"\xaa"*data_length
+	p = h.new_packet(dh_group_exchange_request)
+	p.compile()
+
+	print("dh_group_exchange_group")
+	# Overall length: 280
+	# Packet Length:  276
+	# Padding Length: 8
+	data_length = 267 # 275 - 8
+	dh_group_exchange_group = b"\xaa"*data_length
+	p = h.new_packet(dh_group_exchange_group)
+	p.compile()
+
+	print("dh_group_exchange_init")
+	# Overall length: 272
+	# Packet Length:  268
+	# Padding Length: 6
+	data_length = 261 # 267 - 6
+	dh_group_exchange_init = b"\xaa"*data_length
+	p = h.new_packet(dh_group_exchange_init)
+	p.compile()
+
+	print("dh_group_exchange_reply")
+	# Overall length: 832
+	# Packet Length:  828
+	# Padding Length: 8
+	data_length = 819 # 827 - 8
+	dh_group_exchange_reply = b"\xaa"*data_length
+	p = h.new_packet(dh_group_exchange_reply)
+	p.compile()
+
+	print("new_keys_server")
+	# Overall length: 16
+	# Packet Length:  12
+	# Padding Length: 10
+	data_length = 1 # 11 - 10
+	new_keys_server = b"\xaa"*data_length
+	p = h.new_packet(new_keys_server)
+	p.compile()
+
+	print("new_keys_client")
+	# Overall length: 16
+	# Packet Length:  12
+	# Padding Length: 10
+	data_length = 1 # 11 - 10
+	new_keys_client = b"\xaa"*data_length
+	p = h.new_packet(new_keys_client)
+	p.compile()
+
+
+
+
+if __name__ == "__main__":
+	# test1()
+	test2()
+
+

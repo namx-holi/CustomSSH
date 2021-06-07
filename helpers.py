@@ -10,6 +10,10 @@ class ReadHelper:
 	def remaining(self):
 		return len(self.data) - self.head
 
+	def clear(self):
+		self.data = b""
+		self.head = 0
+
 	def read_bytes(self, n):
 		b = self.data[self.head:self.head+n]
 		self.head += n
@@ -85,6 +89,10 @@ class ReadHelper:
 		num_b = self.read_bytes(mpint_len)
 		return int.from_bytes(num_b, "big", signed=True)
 
+	def read_fixed_int(self, size):
+		num_b = self.read_bytes(size)
+		return int.from_bytes(num_b, "big", signed=True)
+
 	def read_namelist(self):
 		"""
 		A string containing a comma-separated list of names.  A name-list
@@ -120,6 +128,9 @@ class ReadHelper:
 
 class WriteHelper:
 	def __init__(self):
+		self.data = b""
+
+	def clear(self):
 		self.data = b""
 
 	def write_bytes(self, data):
@@ -197,6 +208,10 @@ class WriteHelper:
 		mpint_len = (~num if num < 0 else num).bit_length() // 8 + 1
 		num_b = num.to_bytes(mpint_len, "big", signed=True)
 		self.write_uint32(mpint_len)
+		self.write_bytes(num_b)
+
+	def write_fixed_int(self, num, size):
+		num_b = num.to_bytes(size, "big", signed=True)
 		self.write_bytes(num_b)
 
 	def write_namelist(self, names):

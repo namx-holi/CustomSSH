@@ -1,5 +1,7 @@
 from Crypto.Cipher import AES
 
+from helpers import GenericHandler
+
 """
 	6.3.	Encryption
 	An encryption algorithm and key will be negotiated during the key
@@ -52,40 +54,87 @@ from Crypto.Cipher import AES
 """
 
 
-class EncryptionHandler:
+class EncryptionHandler(GenericHandler):
 
 	def __init__(self, packet_handler):
 		self.handler = packet_handler
-		self.set_algorithm("none")
-		self.set_key("")
+		self.set_encryption_algorithm("none")
+		self.set_decryption_algorithm("none")
 
 
-	def set_algorithm(self, alg):
+	def prepare_encryption_algorithm(self, alg):
+		self.prepared_encryption_algorithm = alg
+	def set_prepared_encryption_algorithm(self):
+		self.set_encryption_algorithm(self.prepared_encryption_algorithm)
+		self.prepared_encryption_algorithm = None
+
+	def prepare_decryption_algorithm(self, alg):
+		self.prepared_decryption_algorithm = alg
+	def set_prepared_decryption_algorithm(self):
+		self.set_decryption_algorithm(self.prepared_decryption_algorithm)
+		self.prepared_decryption_algorithm = None
+
+
+	def set_encryption_algorithm(self, alg):
+		alg = self.algorithms.get(alg, None)
+		if alg is None:
+			raise Exception("algorithm not handled")
+
+		available = alg.get("available")
+		if not available:
+			raise Exception("algorithm not available")
+
+		self.encryption_method = alg.get("encryption_method")
+		self.encryption_block_size = alg.get("block_size")
+		self.encryption_key_size = alg.get("key_size")
+
+		# Reset the cipher object
+		self.encryption_cipher = None
+
+
+	def set_decryption_algorithm(self, alg):
 		alg = self.algorithms.get(alg, None)
 		if alg is None:
 			raise NotImplemented("algorithm not handled")
 
-		method = alg.get("method")
-		if method is None:
-			raise NotImplemented("algorithm method not implemented")
+		available = alg.get("available")
+		if not available:
+			raise Exception("algorithm not available")
 
-		self.encryption_method = method
-		self.block_size = alg.get("block_size")
-		self.key_size = alg.get("key_size")
+		self.decryption_method = alg.get("decryption_method")
+		self.decryption_block_size = alg.get("block_size")
+		self.decryption_key_size = alg.get("key_size")
 
 		# Reset the cipher object
-		self.cipher = None
+		self.decryption_cipher = None
 
 
-	def set_key(self, key):
-		if len(key)*8 != self.key_size:
-			raise Exception(f"Key size needs to be {self.key_size} bits")
+	def set_encryption_key(self, key):
+		if len(key)*8 < self.encryption_key_size:
+			raise Exception(f"Encryption key size needs to be {self.encryption_key_size} bits")
+		self.encryption_key = key[0:self.encryption_key_size//8]
+	def set_decryption_key(self, key):
+		if len(key)*8 < self.decryption_key_size:
+			raise Exception(f"Decryption key size needs to be {self.decryption_key_size} bits")
+		self.decryption_key = key[0:self.decryption_key_size//8]
 
-		self.key = key
+
+	def set_encryption_iv(self, iv):
+		if len(iv)*8 < self.encryption_key_size:
+			raise Exception(f"Encryption IV size needs to be {self.encryption_key_size} bits")
+		self.encryption_iv = iv[0:self.encryption_key_size//8]
+	def set_decryption_iv(self, iv):
+		if len(iv)*8 < self.decryption_key_size:
+			raise Exception(f"Decryption IV size needs to be {self.decryption_key_size} bits")
+		self.decryption_iv = iv[0:self.decryption_key_size//8]
 
 
 	def encrypt(self, data):
 		return self.encryption_method(self, data)
+
+
+	def decrypt(self, data):
+		return self.decryption_method(self, data)
 
 
 	##############
@@ -95,10 +144,14 @@ class EncryptionHandler:
 	# TODO: blowfish-cbc
 	# TODO: twofish-cbc
 
-	def _aes_cbc(self, data):
-		if self.cipher is None:
-			self.cipher = AES.new(self.key, AES.MODE_CBC)
-		return self.cipher.encrypt(data)
+	def _aes_cbc_encrypt(self, data):
+		if self.encryption_cipher is None:
+			self.encryption_cipher = AES.new(self.encryption_key, AES.MODE_CBC, self.encryption_iv)
+		return self.encryption_cipher.encrypt(data)
+	def _aes_cbc_decrypt(self, data):
+		if self.decryption_cipher is None:
+			self.decryption_cipher = AES.new(self.decryption_key, AES.MODE_CBC, self.decryption_iv)
+		return self.decryption_cipher.decrypt(data)
 
 	# TODO: serpent-cbc
 	# TODO: arcfour
@@ -107,72 +160,123 @@ class EncryptionHandler:
 
 	def _no_encryption(self, data):
 		return data
+	def _no_decryption(self, data):
+		return data
 
 
 # List of algorithms and ref of their methods
+# Higher prio = first
 EncryptionHandler.algorithms = {
 	"3des-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 8,
 		"key_size": 112},
 	"blowfish-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 8,
 		"key_size": 128},
 	"twofish-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 16,
 		"key_size": 256},
 	"twofish256-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 16,
 		"key_size": 256},
 	"twofish192-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 16,
 		"key_size": 192},
 	"twofish128-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 16,
 		"key_size": 128},
 	"aes256-cbc": {
-		"method": EncryptionHandler._aes_cbc,
+		"available": True,
+		"priority": 998,
+		"encryption_method": EncryptionHandler._aes_cbc_encrypt,
+		"decryption_method": EncryptionHandler._aes_cbc_decrypt,
 		"block_size": 16,
 		"key_size": 256},
 	"aes192-cbc": {
-		"method": EncryptionHandler._aes_cbc,
+		"available": True,
+		"priority": 999,
+		"encryption_method": EncryptionHandler._aes_cbc_encrypt,
+		"decryption_method": EncryptionHandler._aes_cbc_decrypt,
 		"block_size": 16,
 		"key_size": 192},
 	"aes128-cbc": {
-		"method": EncryptionHandler._aes_cbc,
+		"available": True,
+		"priority": 1000,
+		"encryption_method": EncryptionHandler._aes_cbc_encrypt,
+		"decryption_method": EncryptionHandler._aes_cbc_decrypt,
 		"block_size": 16,
 		"key_size": 128},
 	"serpent256-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 16,
 		"key_size": 256},
 	"serpent192-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 16,
 		"key_size": 192},
 	"serpent128-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 16,
 		"key_size": 128},
 	"arcfour": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 1,
 		"key_size": 128},
 	"idea-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 8,
 		"key_size": 128},
 	"cast128-cbc": {
-		"method": None,
+		"available": False,
+		"priority": 0,
+		"encryption_method": None,
+		"decryption_method": None,
 		"block_size": 8,
 		"key_size": 128},
 	"none": {
-		"method": EncryptionHandler._no_encryption,
+		"available": True,
+		"priority": -1000,
+		"encryption_method": EncryptionHandler._no_encryption,
+		"decryption_method": EncryptionHandler._no_decryption,
 		"block_size": 8,
 		"key_size": 0}
 }

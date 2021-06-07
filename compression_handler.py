@@ -1,4 +1,4 @@
-
+from helpers import GenericHandler
 
 """
 	6.2.	Compression
@@ -31,23 +31,63 @@
 	[SSH-NUMBERS]
 """
 
-
-class CompressionHandler:
+# TODO: Test this with the other algs, not sure when compression
+#  is turned on (at NEWKEYS, or after KEXINIT?)
+class CompressionHandler(GenericHandler):
 	def __init__(self, packet_handler):
 		self.handler = packet_handler
 		self.set_algorithm("none")
 
 
+	def prepare_algorithm(self, alg):
+		self.prepared_algorithm = alg
+	def set_prepared_algorithm(self):
+		self.set_algorithm(self.prepared_algorithm)
+		self.prepared_algorithm = None
+
+
 	def set_algorithm(self, alg):
-		self.algorithm = alg
+		alg = self.algorithms.get(alg, None)
+		if alg is None:
+			raise Exception("algorithm not handled")
+
+		available = alg.get("available")
+		if not available:
+			raise Exception("algorithm not available")
+
+		self.compress_method = alg.get("compress_method")
+		self.decompress_method = alg.get("decompress_method")
 
 
 	def compress(self, payload):
-		if self.algorithm == "zlib":
-			raise NotImplemented
+		return self.compress_method(self, payload)
 
-		elif self.algorithm == "none":
-			return payload
 
-		else:
-			raise NotImplemented
+	def decompress(self, payload):
+		return self.decompress_method(self, payload)
+
+
+	##############
+	# Algorithms #
+	##############
+	# TODO: zlib
+
+	def _no_compression(self, data):
+		return data
+	def _no_decompression(self, data):
+		return data
+
+
+# List of algorithms and ref of their methods
+CompressionHandler.algorithms = {
+	"zlib": {
+		"available": False,
+		"priority": -1000,
+		"compress_method": None,
+		"decompress_method": None},
+	"none": {
+		"available": True,
+		"priority": 1000,
+		"compress_method": CompressionHandler._no_compression,
+		"decompress_method": CompressionHandler._no_decompression}
+}

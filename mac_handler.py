@@ -1,6 +1,7 @@
 import struct
 from Crypto.Hash import HMAC, SHA1, MD5
 
+from helpers import GenericHandler
 
 """
 	6.4.	Data Integrity
@@ -50,54 +51,161 @@ from Crypto.Hash import HMAC, SHA1, MD5
 	[SSH-NUMBERS].
 """
 
+# TODO: Split mac to be independent. Currently it is not.
 
-class MAC_Handler:
+
+class MAC_Handler(GenericHandler):
 	def __init__(self, packet_handler):
 		self.handler = packet_handler
-		self.set_algorithm("none")
-		self.set_key("")
+		self.set_authenticate_algorithm("none")
+		self.set_check_algorithm("none")
 
 
-	def set_algorithm(self, alg):
-		self.algorithm = alg
+	def prepare_authenticate_algorithm(self, alg):
+		self.prepared_algorithm = alg
+	def set_prepared_authenticate_algorithm(self):
+		self.set_authenticate_algorithm(self.prepared_algorithm)
+		self.prepared_algorithm = None
+	# TODO: Write these
+	def prepare_check_algorithm(self, alg):
+		...
+	def set_prepared_check_algorithm(self):
+		...
 
 
-	def set_key(self, key):
+	def set_authenticate_algorithm(self, alg):
+		alg = self.algorithms.get(alg, None)
+		if alg is None:
+			raise NotImplemented("algorithm not handled")
+
+		available = alg.get("available")
+		if not available:
+			raise Exception("algorithm not available")
+
+		self.mac_method = alg.get("method")
+		self.mac_check_method = alg.get("check_method")
+		self.digest_length = alg.get("digest_length")
+		self.key_size = alg.get("key_size")
+	def set_check_algorithm(self, alg):
+		print("TODO: Write mac chekc key stuff")
+		...
+
+
+	def set_authenticate_key(self, key):
+		if len(key) != self.key_size:
+			raise Exception(f"Key size needs to be {self.key_size} bytes")
 		self.key = key
+	def set_check_key(self, key):
+		print("TODO: Write mac chekc key stuff")
+		...
 
 
 	@property
-	def sequence_number(self):
-		return self.handler.sequence_number
+	def incoming_sequence_number(self):
+		return self.handler.incoming_sequence_number
+	@property
+	def outgoing_sequence_number(self):
+		return self.handler.outgoing_sequence_number
 	
 
 	def calculate_mac(self, data):
-		return struct.pack("I", self.sequence_number)
+		return self.mac_method(self, data)
 
-		if self.algorithm == "hmac-sha1":
-			h = HMAC.new(self.key, digestmod=SHA1)
-			h.update(seq_num_b + data)
-			mac = h.digest()
 
-		elif self.algorithm == "hmac-sha1-96":
-			h = HMAC.new(self.key, digestmod=SHA1)
-			h.update(seq_num_b + data)
-			mac = h.digest()[:96//8]
+	def verify_mac(self, data, mac):
+		return self.mac_check_method(self, data, mac)
 
-		elif self.algorithm == "hmac-md5":
-			h = HMAC.new(self.key, digestmod=MD5)
-			h.update(seq_num_b + data)
-			mac = h.digest()
 
-		elif self.algorithm == "hmac-md5-96":
-			h = HMAC.new(self.key, digestmod=MD5)
-			h.update(seq_num_b + data)
-			mac = h.digest()[:96//8]
+	##############
+	# Algorithms #
+	##############
+	def _hmac_sha1(self, data):
+		seq_num_b = struct.pack("I", self.outgoing_sequence_number)
+		h = HMAC.new(self.key, digestmod=SHA1)
+		h.update(seq_num_b + data)
+		return h.digest()
+	def _hmac_sha1_check(self, data, mac):
+		seq_num_b = struct.pack("I", self.incoming_sequence_number)
+		h = HMAC.new(self.key, digestmod=SHA1)
+		h.update(seq_num_b + data)
+		return h.digest() == mac
 
-		elif self.algorithm == "none":
-			mac = b""
+	def _hmac_sha1_96(self, data):
+		seq_num_b = struct.pack("I", self.outgoing_sequence_number)
+		h = HMAC.new(self.key, digestmod=SHA1)
+		h.update(seq_num_b + data)
+		return h.digest()[:96//8]
+	def _hmac_sha1_96_check(self, data, mac):
+		seq_num_b = struct.pack("I", self.incoming_sequence_number)
+		h = HMAC.new(self.key, digestmod=SHA1)
+		h.update(seq_num_b + data)
+		return h.digest()[:96//8] == mac
 
-		else:
-			raise NotImplemented
+	def _hmac_md5(self, data):
+		seq_num_b = struct.pack("I", self.outgoing_sequence_number)
+		h = HMAC.new(self.key, digestmod=MD5)
+		h.update(seq_num_b + data)
+		return h.digest()
+	def _hmac_md5_check(self, data, mac):
+		seq_num_b = struct.pack("I", self.incoming_sequence_number)
+		h = HMAC.new(self.key, digestmod=MD5)
+		h.update(seq_num_b + data)
+		return h.digest() == mac
 
-		return mac
+
+	def _hmac_md5_96(self, data):
+		seq_num_b = struct.pack("I", self.outgoing_sequence_number)
+		h = HMAC.new(self.key, digestmod=MD5)
+		h.update(seq_num_b + data)
+		return h.digest()[:96//8]
+	def _hmac_md5_96_check(self, data, mac):
+		seq_num_b = struct.pack("I", self.incoming_sequence_number)
+		h = HMAC.new(self.key, digestmod=MD5)
+		h.update(seq_num_b + data)
+		return h.digest()[:96//8] == mac
+
+
+	def _no_mac(self, data):
+		return b""
+	def _no_mac_check(self, data, mac):
+		return True
+
+
+# List of algorithms and ref of their methods
+MAC_Handler.algorithms = {
+	"hmac-sha1": {
+		"available": True,
+		"priority": 1000,
+		"method": MAC_Handler._hmac_sha1,
+		"check_method": MAC_Handler._hmac_sha1_check,
+		"digest_length": 20,
+		"key_size": 20},
+	"hmac-sha1-96": {
+		"available": True,
+		"priority": 999,
+		"method": MAC_Handler._hmac_sha1_96,
+		"check_method": MAC_Handler._hmac_sha1_96_check,
+		"digest_length": 12,
+		"key_size": 20},
+	"hmac-md5": {
+		"available": True,
+		"priority": 100,
+		"method": MAC_Handler._hmac_md5,
+		"check_method": MAC_Handler._hmac_md5_check,
+		"digest_length": 16,
+		"key_size": 16},
+	"hmac_md5_96": {
+		"available": True,
+		"priority": 99,
+		"method": MAC_Handler._hmac_md5_96,
+		"check_method": MAC_Handler._hmac_md5_96_check,
+		"digest_length": 12,
+		"key_size": 16},
+	"none": {
+		"available": True,
+		"priority": -1000,
+		"method": MAC_Handler._no_mac,
+		"check_method": MAC_Handler._no_mac_check,
+		"digest_length": 0,
+		"key_size": 0}
+}
