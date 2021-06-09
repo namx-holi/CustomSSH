@@ -260,11 +260,17 @@ class ProtocolHandler:
 			H_sig=H_sig)
 		self.send_packet(reply)
 
-
-	def SSH_MSG_NEWKEYS_handler(self, data):
-		# Immediately reply with our own.
+		# Send a new keys too.
 		reply = SSH_MSG_NEWKEYS()
 		self.send_packet(reply)
+		self.sent_NEWKEYS = True
+
+
+	def SSH_MSG_NEWKEYS_handler(self, data):
+		if not self.sent_NEWKEYS:
+			# Reply with our own.
+			reply = SSH_MSG_NEWKEYS()
+			self.send_packet(reply)
 
 		# Set prepared algorithms
 		self.packet_handler.set_prepared_algorithms()
@@ -279,6 +285,32 @@ class ProtocolHandler:
 			mac_c_to_s=self.dh_handler.mac_key_c_to_s,
 			mac_s_to_c=self.dh_handler.mac_key_s_to_c)
 
+		self.sent_NEWKEYS = False
+
+
+	def SSH_MSG_SERVICE_REQUEST_handler(self, data):
+		service_name = data.service_name
+
+		if service_name == "ssh-userauth":
+			# TODO: Handle this service
+			reply = SSH_MSG_DISCONNECT.SERVICE_NOT_AVAILABLE(
+				f"Service {service_name} not implemented yet.")
+			self.send_packet(reply)
+			return
+
+		elif service_name == "ssh-connection":
+			# TODO: Handle this service
+			reply = SSH_MSG_DISCONNECT.SERVICE_NOT_AVAILABLE(
+				f"Service {service_name} not implemented yet.")
+			self.send_packet(reply)
+			return
+
+		else:
+			# A service that isn't handled
+			reply = SSH_MSG_DISCONNECT.SERVICE_NOT_AVAILABLE(
+				f"Service {service_name} is not available.")
+			self.send_packet(reply)
+			return
 
 
 # TODO: Add method that just creates a msg rather than get_class
@@ -373,10 +405,59 @@ class SSH_MSG_DISCONNECT(SSH_MSG):
 		[SSH-NUMBERS].
 	"""
 	code = 1
-	def __init__(self, reason_code, description, language_tag):
+
+	HOST_NOT_ALLOWED_TO_CONNECT		= lambda d: SSH_MSG_DISCONNECT(1, d)
+	PROTOCOL_ERROR					= lambda d: SSH_MSG_DISCONNECT(2, d)
+	KEY_EXCHANGE_FAILED				= lambda d: SSH_MSG_DISCONNECT(3, d)
+	RESERVED						= lambda d: SSH_MSG_DISCONNECT(4, d)
+	MAC_ERROR						= lambda d: SSH_MSG_DISCONNECT(5, d)
+	COMPRESSION_ERROR				= lambda d: SSH_MSG_DISCONNECT(6, d)
+	SERVICE_NOT_AVAILABLE			= lambda d: SSH_MSG_DISCONNECT(7, d)
+	PROTOCOL_VERSION_NOT_SUPPORTED	= lambda d: SSH_MSG_DISCONNECT(8, d)
+	HOST_KEY_NOT_VERIFIABLE			= lambda d: SSH_MSG_DISCONNECT(9, d)
+	CONNECTION_LOST					= lambda d: SSH_MSG_DISCONNECT(10, d)
+	BY_APPLICATION					= lambda d: SSH_MSG_DISCONNECT(11, d)
+	TOO_MANY_CONNECTIONS			= lambda d: SSH_MSG_DISCONNECT(12, d)
+	AUTH_CANCELLED_BY_USER			= lambda d: SSH_MSG_DISCONNECT(13, d)
+	NO_MORE_AUTH_METHODS_AVAILABLE	= lambda d: SSH_MSG_DISCONNECT(14, d)
+	ILLEGAL_USER_NAME				= lambda d: SSH_MSG_DISCONNECT(15, d)
+
+	# NOTE: Until I need to, I'll assume the langauge tag can just be blank
+	def __init__(self, reason_code, description, language_tag=""):
 		self.reason_code = reason_code
 		self.description = description
 		self.language_tag = language_tag
+
+	@classmethod
+	def create_from_reader(cls, reader):
+		# Ensure reader is at 0
+		reader.head = 0
+		cmd = reader.read_uint8()
+		if cmd != cls.code:
+			raise Exception("Using wrong msg")
+
+		reason_code = reader.read_uint32()
+		description = reader.read_string(ascii=True)
+		language_tag = reader.read_string()
+
+		# Check we've read everything
+		if reader.remaining != 0:
+			remaining_b = reader.data[-reader.remaining:]
+			raise Exception(f"Still had data to read in {reader}: {remaining_b}")
+
+		return cls(
+			reason_code=reason_code,
+			description=description,
+			language_tag=language_tag)
+
+	def to_bytes(self):
+		writer = WriteHelper()
+		writer.write_uint8(self.code)
+		writer.write_uint32(self.reason_code)
+		writer.write_string(self.description)
+		writer.write_string(self.language_tag)
+		return writer.data
+
 
 class SSH_MSG_IGNORE(SSH_MSG):
 	"""
@@ -464,8 +545,32 @@ class SSH_MSG_SERVICE_REQUEST(SSH_MSG):
 	Continues in SSH_MSG_SERVICE_ACCEPT
 	"""
 	code = 5
-	def __init__(self):
-		...
+	def __init__(self, service_name):
+		self.service_name = service_name
+
+	@classmethod
+	def create_from_reader(cls, reader):
+		# Ensure reader is at 0
+		reader.head = 0
+		cmd = reader.read_uint8()
+		if cmd != cls.code:
+			raise Exception("Using wrong msg")
+
+		service_name = reader.read_string(ascii=True)
+
+		# Check we've read everything
+		if reader.remaining != 0:
+			remaining_b = reader.data[-reader.remaining:]
+			raise Exception(f"Still had data to read in {reader}: {remaining_b}")
+
+		return cls(
+			service_name=service_name)
+
+	def to_bytes(self):
+		writer = WriteHelper()
+		writer.write_uint8(self.code)
+		writer.write_string(self.service_name)
+		return writer.data
 
 class SSH_MSG_SERVICE_ACCEPT(SSH_MSG):
 	"""
@@ -1373,8 +1478,37 @@ class SSH_MSG_CHANNEL_DATA(SSH_MSG):
 	"""
 	"""
 	code = 94
-	def __init__(self):
-		...
+	def __init__(self, recipient_channel, data):
+		self.recipient_channel = recipient_channel
+		self.data = data
+
+	@classmethod
+	def create_from_reader(cls, reader):
+		# Ensure reader is at 0
+		reader.head = 0
+		cmd = reader.read_uint8()
+		if cmd != cls.code:
+			raise Exception("Using wrong msg")
+
+		recipient_channel = reader.read_uint32()
+		data = reader.read_string()
+
+		# Check we've read everything
+		if reader.remaining != 0:
+			remaining_b = reader.data[-reader.remaining:]
+			raise Exception(f"Still had data to read in {reader}: {remaining_b}")
+
+		return cls(
+			recipient_channel=recipient_channel,
+			data=data)
+
+	def to_bytes(self):
+		writer = WriteHelper()
+		writer.write_uint8(self.code)
+		writer.write_uint32(self.recipient_channel)
+		writer.write_string(self.data)
+		return writer.data
+
 
 class SSH_MSG_CHANNEL_EXTENDED_DATA(SSH_MSG):
 	"""
