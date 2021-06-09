@@ -106,10 +106,14 @@ class ProtocolHandler:
 
 
 	def send_packet(self, msg):
-		if not isinstance(msg, SSH_MSG):
-			data = msg
-		else:
+		if isinstance(msg, SSH_MSG_DISCONNECT):
+			print(f" [*] Disconnecting client: {msg.description}")
 			data = msg.to_bytes()
+			self.running = False # We expect the client to disconnect.
+		if isinstance(msg, SSH_MSG):
+			data = msg.to_bytes()
+		else:
+			data = msg
 
 		packet = self.packet_handler.new_packet(data)
 
@@ -136,7 +140,10 @@ class ProtocolHandler:
 
 				if unsuccessful_count >= stop_when_unsuccessful_count:
 					print("Disconnecting as we hit max unsuccessful count")
-					self.running = False
+
+					disconnect_msg = SSH_MSG_DISCONNECT.CONNECTION_LOST(
+						f"Didn't receive a packet for {stop_when_unsuccessful_count} tries.")
+					self.send_packet(disconnect_msg)
 					continue
 
 				# Sleep until trying to handle next packet
