@@ -187,14 +187,16 @@ class MAC_Handler(GenericHandler):
 # List of algorithms and ref of their methods
 MAC_Handler.algorithms = {
 	"hmac-sha1": {
-		"available": True,
+		# TODO: Get working. It doesn't generate the correct MAC.
+		"available": False,
 		"priority": 1000,
 		"auth_method": MAC_Handler._hmac_sha1,
 		"check_method": MAC_Handler._hmac_sha1_check,
 		"digest_length": 20,
 		"key_size": 20},
 	"hmac-sha1-96": {
-		"available": True,
+		# TODO: Get working. It doesn't generate the correct MAC.
+		"available": False,
 		"priority": 999,
 		"auth_method": MAC_Handler._hmac_sha1_96,
 		"check_method": MAC_Handler._hmac_sha1_96_check,
@@ -202,13 +204,14 @@ MAC_Handler.algorithms = {
 		"key_size": 20},
 	"hmac-md5": {
 		"available": True,
-		"priority": 100000000,
+		"priority": 100,
 		"auth_method": MAC_Handler._hmac_md5,
 		"check_method": MAC_Handler._hmac_md5_check,
 		"digest_length": 16,
 		"key_size": 16},
-	"hmac_md5_96": {
-		"available": True,
+	"hmac-md5-96": {
+		# TODO: Get working. It doesn't generate the correct MAC.
+		"available": False,
 		"priority": 99,
 		"auth_method": MAC_Handler._hmac_md5_96,
 		"check_method": MAC_Handler._hmac_md5_96_check,
