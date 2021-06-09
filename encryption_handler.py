@@ -210,14 +210,16 @@ EncryptionHandler.algorithms = {
 		"block_size": 16,
 		"key_size": 128},
 	"aes256-cbc": {
-		"available": True,
+		# TODO: Get the key length thing working with key generating
+		"available": False,
 		"priority": 998,
 		"encryption_method": EncryptionHandler._aes_cbc_encrypt,
 		"decryption_method": EncryptionHandler._aes_cbc_decrypt,
 		"block_size": 16,
 		"key_size": 256},
 	"aes192-cbc": {
-		"available": True,
+		# TODO: Get the key length thing working with key generating
+		"available": False,
 		"priority": 999,
 		"encryption_method": EncryptionHandler._aes_cbc_encrypt,
 		"decryption_method": EncryptionHandler._aes_cbc_decrypt,
