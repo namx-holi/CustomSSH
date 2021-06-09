@@ -31,9 +31,12 @@ from helpers import GenericHandler
 	[SSH-NUMBERS]
 """
 
+# TODO: Set up difference for client/server
+
 # TODO: Test this with the other algs, not sure when compression
 #  is turned on (at NEWKEYS, or after KEXINIT?)
 class CompressionHandler(GenericHandler):
+
 	def __init__(self, packet_handler):
 		self.handler = packet_handler
 		self.set_algorithm("none")
@@ -49,11 +52,11 @@ class CompressionHandler(GenericHandler):
 	def set_algorithm(self, alg):
 		alg = self.algorithms.get(alg, None)
 		if alg is None:
-			raise Exception("algorithm not handled")
-
+			raise Exception(f"algorithm {alg} not handled")
+		
 		available = alg.get("available")
 		if not available:
-			raise Exception("algorithm not available")
+			raise Exception(f"algorithm {alg} not available")
 
 		self.compress_method = alg.get("compress_method")
 		self.decompress_method = alg.get("decompress_method")
@@ -61,7 +64,6 @@ class CompressionHandler(GenericHandler):
 
 	def compress(self, payload):
 		return self.compress_method(self, payload)
-
 
 	def decompress(self, payload):
 		return self.decompress_method(self, payload)

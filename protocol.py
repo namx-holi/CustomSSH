@@ -238,7 +238,7 @@ class ProtocolHandler:
 
 		# Retrieve user's e
 		e = data.e
-		self.dh_handler.set_client_private_key(e)
+		self.dh_handler.set_client_public_key(e)
 
 		f = self.dh_handler.gen_server_public_key()
 		K = self.dh_handler.gen_shared_key()

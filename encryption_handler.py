@@ -67,7 +67,7 @@ class EncryptionHandler(GenericHandler):
 	def set_prepared_encryption_algorithm(self):
 		self.set_encryption_algorithm(self.prepared_encryption_algorithm)
 		self.prepared_encryption_algorithm = None
-
+	
 	def prepare_decryption_algorithm(self, alg):
 		self.prepared_decryption_algorithm = alg
 	def set_prepared_decryption_algorithm(self):
@@ -78,11 +78,11 @@ class EncryptionHandler(GenericHandler):
 	def set_encryption_algorithm(self, alg):
 		alg = self.algorithms.get(alg, None)
 		if alg is None:
-			raise Exception("algorithm not handled")
-
+			raise Exception(f"algorithm {alg} not handled")
+		
 		available = alg.get("available")
 		if not available:
-			raise Exception("algorithm not available")
+			raise Exception(f"algorithm {alg} not available")
 
 		self.encryption_method = alg.get("encryption_method")
 		self.encryption_block_size = alg.get("block_size")
@@ -90,16 +90,15 @@ class EncryptionHandler(GenericHandler):
 
 		# Reset the cipher object
 		self.encryption_cipher = None
-
-
+	
 	def set_decryption_algorithm(self, alg):
 		alg = self.algorithms.get(alg, None)
 		if alg is None:
-			raise NotImplemented("algorithm not handled")
-
+			raise Exception(f"algorithm {alg} not handled")
+		
 		available = alg.get("available")
 		if not available:
-			raise Exception("algorithm not available")
+			raise Exception(f"algorithm {alg} not available")
 
 		self.decryption_method = alg.get("decryption_method")
 		self.decryption_block_size = alg.get("block_size")
@@ -113,6 +112,7 @@ class EncryptionHandler(GenericHandler):
 		if len(key)*8 < self.encryption_key_size:
 			raise Exception(f"Encryption key size needs to be {self.encryption_key_size} bits")
 		self.encryption_key = key[0:self.encryption_key_size//8]
+
 	def set_decryption_key(self, key):
 		if len(key)*8 < self.decryption_key_size:
 			raise Exception(f"Decryption key size needs to be {self.decryption_key_size} bits")
@@ -123,6 +123,7 @@ class EncryptionHandler(GenericHandler):
 		if len(iv)*8 < self.encryption_key_size:
 			raise Exception(f"Encryption IV size needs to be {self.encryption_key_size} bits")
 		self.encryption_iv = iv[0:self.encryption_key_size//8]
+
 	def set_decryption_iv(self, iv):
 		if len(iv)*8 < self.decryption_key_size:
 			raise Exception(f"Decryption IV size needs to be {self.decryption_key_size} bits")
@@ -131,7 +132,6 @@ class EncryptionHandler(GenericHandler):
 
 	def encrypt(self, data):
 		return self.encryption_method(self, data)
-
 
 	def decrypt(self, data):
 		return self.decryption_method(self, data)

@@ -7,13 +7,15 @@ import protocol
 from packet import PacketHandler
 from helpers import ReadHelper, WriteHelper
 from public_key_handler import PublicKeyHandler
+from diffie_hellman_handler import DiffieHellmanHandler
 
 HOST = "127.0.0.1"
-PORT = 22
+PORT = 2222
 
 V_C = b"SSH-2.0-Bingus"
 
 ph = PacketHandler()
+dh_handler = DiffieHellmanHandler()
 
 
 def test():
@@ -74,6 +76,15 @@ def test():
 	send_packet(client_kexinit)
 	I_C = client_kexinit.to_bytes()
 
+	# Set up key stuff
+	ph.prepare_algorithms(
+		enc_c_to_s=encryption_algorithms[0],
+		enc_s_to_c=encryption_algorithms[0],
+		mac_c_to_s=mac_algorithms[0],
+		mac_s_to_c=mac_algorithms[0],
+		com_c_to_s=comp_algorithms[0],
+		com_s_to_c=comp_algorithms[0])
+
 	# Receiving server KEXINIT
 	server_kexinit = recv_packet()
 	I_S = server_kexinit.to_bytes()
@@ -121,6 +132,7 @@ def test():
 	w.write_mpint(K)
 	H_raw = SHA1.new(w.data)
 	H = H_raw.digest()
+	session_id = H # exchange hash h from the first key exchange
 	print(f"  V_C: {V_C}")
 	print(f"  V_S: {V_S}")
 	print(f"  I_C: {I_C[0:16]}...")
@@ -130,8 +142,10 @@ def test():
 
 
 	pk_handler = PublicKeyHandler("ssh-rsa")
-	pk_handler.read_key("localhost.priv")
-	# pk_handler.read_key("CustomSSH.priv")
+	if PORT == 22:
+		pk_handler.read_key("localhost.priv")
+	else:
+		pk_handler.read_key("CustomSSH.priv")
 	server_key = pk_handler.key
 
 	H_H_raw = SHA1.new(H)
@@ -140,13 +154,29 @@ def test():
 	print("  Generated H_sig starts with: ", sig[0:4])
 	print("")
 
-	# Read the NEWKEYS packet
-	print("waiting for new keys")
+	# new keys!
 	server_new_keys = recv_packet()
-	# And send our own
 	client_new_keys = protocol.SSH_MSG_NEWKEYS()
 	send_packet(client_new_keys)
+	dh_handler.K = K
+	dh_handler.H = H
+	dh_handler.session_id = session_id
+	dh_handler.set_algorithm(kex_algorithms[0])
+	dh_handler.generate_keys()
+	print("Tried to generate keys")
 
+	ph.set_prepared_algorithms()
+	ph.set_keys( # keys swapped around as we are client now
+		iv_c_to_s=dh_handler.initial_iv_s_to_c,
+		iv_s_to_c=dh_handler.initial_iv_c_to_s,
+		enc_c_to_s=dh_handler.enc_key_s_to_c,
+		enc_s_to_c=dh_handler.enc_key_c_to_s,
+		mac_c_to_s=dh_handler.mac_key_s_to_c,
+		mac_s_to_c=dh_handler.mac_key_c_to_s)
 
-	print("Waiting to recv packet")
+	# Sending bogus service request
+	service_request = protocol.SSH_MSG_SERVICE_REQUEST("ssh-userauth")
+	send_packet(service_request)
+
+	print("waiting on resp")
 	_ = recv_packet()

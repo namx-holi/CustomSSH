@@ -156,8 +156,10 @@ class PacketHandler:
 	def decryption_block_size(self):
 		return self.encryption_handler.decryption_block_size
 	@property
-	def mac_digest_length(self):
-		return self.mac_handler.digest_length
+	def mac_auth_digest_length(self):
+		return self.mac_handler.auth_digest_length
+	def mac_check_digest_length(self):
+		return self.mac_handler.check_digest_length
 
 
 	@property
@@ -273,21 +275,15 @@ class PacketHandler:
 		# # TODO: How to handle this?
 		# raw = conn.read()
 
-		# TODO:
-		"""
-		Implementations SHOULD
-		decrypt the length after receiving the first 8 (or cipher block size,
-		whichever is larger) bytes of a packet.
-		"""
 
 		# First separate the mac and the packet
-		if self.mac_handler.digest_length == 0:
+		if self.mac_handler.check_digest_length == 0:
 			# Need to separate this as otherwise we get [-0:] which == [0:]
 			encrypted_packet = raw
 			mac = b""
 		else:
-			encrypted_packet = raw[:-self.mac_handler.digest_length]
-			mac = raw[-self.mac_handler.digest_length:]
+			encrypted_packet = raw[:-self.mac_handler.check_digest_length]
+			mac = raw[-self.mac_handler.check_digest_length:]
 
 		# Decrypt the packet
 		complete_packet = self.encryption_handler.decrypt(encrypted_packet)
@@ -313,10 +309,16 @@ class PacketHandler:
 
 
 	def read_packet_from_conn(self, conn):
+		"""
+		Implementations SHOULD
+		decrypt the length after receiving the first 8 (or cipher block size,
+		whichever is larger) bytes of a packet.
+		"""
+
 		block_size = self.decryption_block_size
 
 		# Read the first block for packet length
-		first_block_encrypted = conn.recv(block_size)
+		first_block_encrypted = conn.recv(max(8, block_size))
 		if first_block_encrypted == b"":
 			return None
 
@@ -332,10 +334,34 @@ class PacketHandler:
 		full_packet = first_block + remaining_packet
 
 		# Read the mac and verify it
-		mac = conn.recv(self.mac_digest_length)
-		valid = self.mac_handler.verify_mac(full_packet, mac)
+		mac = conn.recv(self.mac_auth_digest_length)
+
+		"""
+		# TODO: This code here needs to be removed. It is used currently
+		#  to generate a series of MACs with different sequence numbers
+		#  to check if the reason for getting an incorrect MAC is due
+		#  to the sequence numbers being out of order.
+		from Crypto.Hash import HMAC, SHA1, MD5
+		try:
+			# key = self.mac_handler.auth_key
+			key = self.mac_handler.check_key
+		except:
+				...
+		else:
+			print("Trying to verify the mac...")
+			for i in range(10):
+				seq_num_b = struct.pack(">I", i)
+				h = HMAC.new(key, digestmod=MD5)
+				h.update(seq_num_b + full_packet)
+				print(f"MAC for {i} was {h.digest()}")
+			print("We are looking for:", mac)
+		# """
+
+
+		valid = self.mac_handler.verify_mac(data=full_packet, mac=mac)
 		if not valid:
-			print("MAC WAS NOT VALID????")
+			print(f" [!] MAC was not valid!")
+			print(f"     Received {mac}")
 
 		# Read the padding length
 		padding_length = struct.unpack(">B", full_packet[4:5])[0]
@@ -343,6 +369,9 @@ class PacketHandler:
 		# Extract the compressed payload and decompress
 		payload_compressed = full_packet[5:-padding_length]
 		payload = self.compression_handler.decompress(payload_compressed)
+
+		# Increment their sequence number
+		self.increment_incoming_sequence_number()
 
 		return payload
 

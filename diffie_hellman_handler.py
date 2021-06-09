@@ -65,7 +65,7 @@ class DiffieHellmanHandler(GenericHandler):
 	def HASH(self, data):
 		return self.hash_method.new(data).digest()
 
-	def set_client_private_key(self, e):
+	def set_client_public_key(self, e):
 		self.e = e
 
 	def gen_server_public_key(self):
