@@ -99,7 +99,6 @@ class ProtocolHandler:
 		data = SSH_MSG.create_from_packet(packet)
 
 		handler_method_name = f"{data.msg_type}_handler"
-		print("Trying to run handler", handler_method_name)
 		handler = self.__getattribute__(handler_method_name)
 
 		handler(data)

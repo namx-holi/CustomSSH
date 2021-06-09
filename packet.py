@@ -156,10 +156,10 @@ class PacketHandler:
 	def decryption_block_size(self):
 		return self.encryption_handler.decryption_block_size
 	@property
-	def mac_auth_digest_length(self):
-		return self.mac_handler.auth_digest_length
-	def mac_check_digest_length(self):
-		return self.mac_handler.check_digest_length
+	def mac_auth_length(self):
+		return self.mac_handler.auth_key_size
+	def mac_check_length(self):
+		return self.mac_handler.check_key_size
 
 
 	@property
@@ -334,7 +334,7 @@ class PacketHandler:
 		full_packet = first_block + remaining_packet
 
 		# Read the mac and verify it
-		mac = conn.recv(self.mac_auth_digest_length)
+		mac = conn.recv(self.mac_auth_length)
 
 		"""
 		# TODO: This code here needs to be removed. It is used currently

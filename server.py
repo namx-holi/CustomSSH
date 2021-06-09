@@ -15,11 +15,10 @@ s.bind(("", 2222))
 s.listen(1)
 
 while True:
-	print("Listening for connection")
+	print(" [*] Listening for connection")
 	conn, addr = s.accept()
-	print("gottem")
 	try:
-		print("Connection from", addr)
+		print(f" [*] Connection from {addr[0]}:{addr[1]}")
 		c = ProtocolHandler(conn, addr)
 		c.start()
 

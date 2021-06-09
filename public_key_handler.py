@@ -147,7 +147,6 @@ class PublicKeyHandler(GenericHandler):
 	##############
 	def read_ssh_dss(self, filename):
 		self.key = DSA.import_key(open(filename).read())
-		print("Loaded SSH-DSA key")
 	
 		w = WriteHelper()
 		w.write_string("ssh-dss")
@@ -169,8 +168,7 @@ class PublicKeyHandler(GenericHandler):
 
 	def read_ssh_rsa(self, filename):
 		self.key = RSA.import_key(open(filename).read())
-		print("Loaded SSH-RSA key")
-		
+
 		w = WriteHelper()
 		w.write_string("ssh-rsa")
 		w.write_mpint(self.key.e)
