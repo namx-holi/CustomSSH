@@ -14,7 +14,6 @@ fake_db = {
 	"user": ("pass123", False),
 	"bingus": ("bingus", True)
 }
-needs_to_be_changed = True
 
 
 class LoginManager:
