@@ -313,45 +313,41 @@ class ProtocolHandler:
 
 
 	def SSH_MSG_USERAUTH_REQUEST_handler(self, data):
-		session, reply = self.login_manager.handle_userauth_request(data)
-		print("session is", session)
-		print("reply is", reply)
+		session, reply = self.login_manager.handle_userauth_request(self, data)
 		self.session = session
 		self.send_packet(reply)
-		return
 
 
-		print("Method name is", data.method_name)
-		method_name = data.method_name
+	def SSH_MSG_CHANNEL_OPEN_handler(self, data):
+		print("handling channel open")
+		print("channel type is", data.channel_type)
+		print("initial window size is", data.initial_window_size)
+		print("max packet size is", data.maximum_packet_size)
+		print(data)
 
-		# TODO: Move most of this to a handler.
-		# auths = ["publickey", "password", "hostbased"]
-		auths = ["password"]
+		reply = self.session.handle_channel_open(data)
+		self.send_packet(reply)
 
-		if method_name == "publickey":
-			print("TODO")
 
-		elif method_name == "password":
-			username = data.user_name
-			password = data.password
-			# TODO: Check password
-			print("Password is", password)
-			if password != "bingus":
-				reply = SSH_MSG_USERAUTH_FAILURE(
-					auths=auths, partial_success=False)
-				self.send_packet(reply)
-				return
-
-			print("awesome gamer")
-
-		elif method_name == "hostbased":
-			print("TODO")
-
-		elif method_name == "none":
-			reply = SSH_MSG_USERAUTH_FAILURE(
-				auths=auths, partial_success=False)
+	def SSH_MSG_CHANNEL_REQUEST_handler(self, data):
+		reply = self.session.handle_channel_request(data)
+		if reply:
 			self.send_packet(reply)
 
-		else:
-			print(" [!] Cannot handle that method")
-			reply = SSH_MSG_USERAUTH_FAILURE()
+
+	def SSH_MSG_CHANNEL_DATA_handler(self, data):
+		reply = self.session.handle_channel_data(data)
+		if reply:
+			print("reply to CHANNEL_DATA is", reply)
+			self.send_packet(reply)
+
+	def SSH_MSG_CHANNEL_EXTENDED_DATA_handler(self, data):
+		reply = self.session.handle_channel_data(data)
+		if reply:
+			self.send_packet(reply)
+
+	def SSH_MSG_DISCONNECT_handler(self, data):
+		reason_code = data.reason_code
+		description = data.description
+		print(f"  [*] Disconnect ({reason_code}): {description}")
+		self.running = False

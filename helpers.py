@@ -10,6 +10,10 @@ class ReadHelper:
 	def remaining(self):
 		return len(self.data) - self.head
 
+	@property
+	def remaining_bytes(self):
+		return self.data[-self.remaining:]
+
 	def clear(self):
 		self.data = b""
 		self.head = 0

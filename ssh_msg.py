@@ -38,8 +38,9 @@ class SSH_MSG:
 					remaining_b = reader.data[-reader.remaining:]
 					raise Exception(f"Still had data to read in {reader}: {remaining_b}")
 
-			except:
+			except Exception as e:
 				# Just failed to read packet with that class. try next.
+				print(e)
 				pass
 
 			finally:
@@ -907,14 +908,19 @@ class SSH_MSG_USERAUTH_REQUEST(SSH_MSG):
 		self.user_name = user_name
 		self.service_name = service_name
 		self.method_name = method_name
-		self._ = kwargs.get("_")
-		self.public_key_algorithm_name = kwargs.get("public_key_algorithm_name")
-		self.public_key_blob = kwargs.get("public_key_blob")
-		self.public_key = kwargs.get("public_key")
-		self.signature = kwargs.get("signature")
-		self.changing_password = kwargs.get("changing_password")
-		self.password = kwargs.get("password")
-		self.new_password = kwargs.get("new_password")
+
+		# Handle kwargs
+		for kwarg_name in kwargs:
+			self.__setattr__(kwarg_name, kwargs[kwarg_name])
+		
+		# self._ = kwargs.get("_")
+		# self.public_key_algorithm_name = kwargs.get("public_key_algorithm_name")
+		# self.public_key_blob = kwargs.get("public_key_blob")
+		# self.public_key = kwargs.get("public_key")
+		# self.signature = kwargs.get("signature")
+		# self.changing_password = kwargs.get("changing_password")
+		# self.password = kwargs.get("password")
+		# self.new_password = kwargs.get("new_password")
 		# TODO: Include fields for hostbased and none
 
 	@classmethod
@@ -1026,7 +1032,7 @@ class SSH_MSG_USERAUTH_FAILURE(SSH_MSG):
 		self.partial_success = partial_success
 
 	@classmethod
-	def create_from_reader(self, reader):
+	def create_from_reader(cls, reader):
 		auths = reader.read_namelist()
 		partial_success = reader.read_bool()
 		return cls(
@@ -1097,7 +1103,7 @@ class SSH_MSG_USERAUTH_SUCCESS(SSH_MSG):
 		pass
 
 	@classmethod
-	def create_from_reader(self, reader):
+	def create_from_reader(cls, reader):
 		return cls()
 
 	def to_bytes(self):
@@ -1193,7 +1199,7 @@ class SSH_MSG_USERAUTH_PASSWD_CHANGEREQ(SSH_MSG_USERAUTH_MISC_RESP):
 		self.language_tag = language_tag
 
 	@classmethod
-	def create_from_reader(self, reader):
+	def create_from_reader(cls, reader):
 		prompt = reader.read_string(ascii=True)
 		language_tag = reader.read_string(ascii=True)
 
@@ -1235,27 +1241,258 @@ class SSH_MSG_REQUEST_FAILURE(SSH_MSG):
 # ???
 class SSH_MSG_CHANNEL_OPEN(SSH_MSG):
 	"""
+	RFC4254, 5.1. Opening a Channel
+		When either side wishes to open a new channel, it allocates a local
+		number for the channel.  It then sends the following message to the
+		other side, and includes the local channel number and initial window
+		size in the message.
+
+			byte	SSH_MSG_CHANNEL_OPEN
+			string	channel type in US-ASCII only
+			uint32	sender channel
+			uint32	initial window size
+			uint32	maximum packet size
+			....	channel type specific data follows
+
+		The 'channel type' is a name, as described in [SSH-ARCH] and
+		[SSH-NUMBERS], with similar extension mechanisms.  The 'sender
+		channel' is a local identifier for the channel used by the sender of
+		this message.  The 'initial window size' specifies how many bytes of
+		channel data can be sent to the sender of this message without
+		adjusting the window.  The 'maximum packet size' specifies the
+		maximum size of an individual data packet that can be sent to the
+		sender.  For example, one might want to use smaller packets for
+		interactive connections to get better interactive response on slow
+		links.
+
+		The remote side then decides whether it can open the channel, and
+		responds with either SSH_MSG_CHANNEL_OPEN_CONFIRMATION or
+		SSH_MSG_CHANNEL_OPEN_FAILURE.
+
+	Continued in SSH_MSG_CHANNEL_OPEN_CONFIRMATION
 	"""
 	code = 90
-	def __init__(self):
-		...
+	def __init__(self,
+		channel_type, sender_channel,
+		initial_window_size, maximum_packet_size,
+		**kwargs
+	):
+		self.channel_type = channel_type
+		self.sender_channel = sender_channel
+		self.initial_window_size = initial_window_size
+		self.maximum_packet_size = maximum_packet_size
+
+		# Handle kwargs
+		for kwarg_name in kwargs:
+			self.__setattr__(kwarg_name, kwargs[kwarg_name])
+
+		# self.originator_address = kwargs.get("originator_address")
+		# self.originator_port = kwargs.get("originator_port")
+		# self.address_that_was_connected = kwargs.get("address_that_was_connected")
+		# self.port_that_was_connected = kwargs.get("port_that_was_connected")
+		# self.host_to_connect = kwargs.get("host_to_connect")
+		# self.port_to_connect = kwargs.get("port_to_connect")
+
+	# TODO: Write the reader and to_bytes
+	@classmethod
+	def create_from_reader(cls, reader):
+		channel_type = reader.read_string(ascii=True)
+		sender_channel = reader.read_uint32()
+		initial_window_size = reader.read_uint32()
+		maximum_packet_size = reader.read_uint32()
+
+		if channel_type == "session":
+			return cls(
+				channel_type=channel_type,
+				sender_channel=sender_channel,
+				initial_window_size=initial_window_size,
+				maximum_packet_size=maximum_packet_size)
+
+		elif channel_type == "x11":
+			originator_address = reader.read_string(ascii=True)
+			originator_port = reader.read_uint32()
+			return cls(
+				channel_type=channel_type,
+				sender_channel=sender_channel,
+				initial_window_size=initial_window_size,
+				maximum_packet_size=maximum_packet_size,
+				originator_address=originator_address,
+				originator_port=originator_port)
+
+		elif channel_type == "forwarded-tcpip":
+			address_that_was_connected = reader.read_string(ascii=True)
+			port_that_was_connected = reader.read_uint32()
+			originator_address = reader.read_string(ascii=True)
+			originator_port = reader.read_uint32()
+			return cls(
+				channel_type=channel_type,
+				sender_channel=sender_channel,
+				initial_window_size=initial_window_size,
+				maximum_packet_size=maximum_packet_size,
+				address_that_was_connected=address_that_was_connected,
+				port_that_was_connected=port_that_was_connected,
+				originator_address=originator_address,
+				originator_port=originator_port)
+
+		elif channel_type == "direct-tcpip":
+			host_to_connect = reader.read_string(ascii=True)
+			port_to_connect = reader.read_uint32()
+			originator_address = reader.read_string(ascii=True)
+			originator_port = reader.read_uint32()
+			return cls(
+				channel_type=channel_type,
+				sender_channel=sender_channel,
+				initial_window_size=initial_window_size,
+				maximum_packet_size=maximum_packet_size,
+				host_to_connect=host_to_connect,
+				port_to_connect=port_to_connect,
+				originator_address=originator_address,
+				originator_port=originator_port)
+
+		else:
+			raise Exception("Unhandled channel_type for CHANNEL_OPEN")
+
+	# TODO: Write to_bytes method
 
 class SSH_MSG_CHANNEL_OPEN_CONFIRMATION(SSH_MSG):
 	"""
+	Continued from SSH_MSG_CHANNEL_OPEN
+		.
+			byte	SSH_MSG_CHANNEL_OPEN_CONFIRMATION
+			uint32	recipient channel
+			uint32	sender channel
+			uint32	initial window size
+			uint32	maximum packet size
+			....	channel type specific data follows
+
+		The 'recipient channel' is the channel number given in the original
+		open request, and 'sender channel' is the channel number allocated by
+		the other side.
+
+	Continued in SSH_MSG_CHANNEL_OPEN_FAILURE
 	"""
 	code = 91
-	def __init__(self):
-		...
+	def __init__(self,
+		recipient_channel, sender_channel,
+		initial_window_size, maximum_packet_size,
+		**kwargs
+	):
+		self.recipient_channel = recipient_channel
+		self.sender_channel = sender_channel
+		self.initial_window_size = initial_window_size
+		self.maximum_packet_size = maximum_packet_size
+
+		# Handle kwargs
+		for kwarg_name in kwargs:
+			self.__setattr__(kwarg_name, kwargs[kwarg_name])
+
+	# TODO: Write the reader and to_bytes
+
+	# @classmethod
+	# def create_from_reader(cls, reader):
+	# 	recipient_channel = reader.read_
+
+
+	def to_bytes(self):
+		writer = WriteHelper()
+		writer.write_uint8(self.code)
+		writer.write_uint32(self.recipient_channel)
+		writer.write_uint32(self.sender_channel)
+		writer.write_uint32(self.initial_window_size)
+		writer.write_uint32(self.maximum_packet_size)
+		# TODO: Handle channel type specific data
+		return writer.data
 
 class SSH_MSG_CHANNEL_OPEN_FAILURE(SSH_MSG):
 	"""
+	Continued from SSH_MSG_CHANNEL_OPEN_CONFIRMATION
+		.
+			byte	SSH_MSG_CHANNEL_OPEN_FAILURE
+			uint32	recipient channel
+			uint32	reason code
+			string	description in ISO-10646 UTF-8 encoding [RFC3629]
+			string	language tag [RFC3066]
+
+		If the recipient of the SSH_MSG_CHANNEL_OPEN message does not support
+		the specified 'channel type', it simply responds with
+		SSH_MSG_CHANNEL_OPEN_FAILURE.  The client MAY show the 'description'
+		string to the user.  if this is done, the client software should take
+		the precautions discussed in [SSH-ARCH].
+
+		The SSH_MSG_CHANNEL_OPEN_FAILURE 'reason code' values are defined in
+		the following table.  Note that the values for the 'reason code' are
+		given in decimal format for readability, but they are actually uint32
+		values.
+
+			Symbolic name							reason code
+			-------------							-----------
+			SSH_OPEN_ADMINISTRATIVELY_PROHIBITED	1
+			SSH_OPEN_CONNECT_FAILED					2
+			SSH_OPEN_UNKNOWN_CHANNEL_TYPE			3
+			SSH_OPEN_RESOURCE_SHORTAGE				4
+
+		Requests for assignments of new SSH_MSG_CHANNEL_OPEN 'reason code'
+		values (and associated 'description' text) in the range of 0x00000005
+		to 0xFDFFFFFF MUST be done through the IETF CONSENSUS method, as
+		described in [RFC2434].  The IANA will not assign Channel Connection
+		Failure 'reason code' values in the range of 0xFE000000 to
+		0xFFFFFFFF.  Channel Connection Failure 'reason code' values in that
+		range are left for PRIVATE USE, as described in [RFC2434].
 	"""
 	code = 92
-	def __init__(self):
-		...
+
+	ADMINISTRATIVELY_PROHIBITED	= lambda rc,d: SSH_MSG_CHANNEL_OPEN_FAILURE(rc,1,d)
+	CONNECT_FAILED				= lambda rc,d: SSH_MSG_CHANNEL_OPEN_FAILURE(rc,2,d)
+	UNKNOWN_CHANNEL_TYPE		= lambda rc,d: SSH_MSG_CHANNEL_OPEN_FAILURE(rc,3,d)
+	RESOURCE_SHORTAGE			= lambda rc,d: SSH_MSG_CHANNEL_OPEN_FAILURE(rc,4,d)
+
+	def __init__(self,
+		recipient_channel, reason_code,
+		description, language_tag=""
+	):
+		self.recipient_channel = recipient_channel
+		self.reason_code = reason_code
+		self.description = description
+		self.language_tag = language_tag
+
+	@classmethod
+	def create_from_reader(cls, reader):
+		recipient_channel = reader.read_uint32()
+		reason_code = reader.read_uint32()
+		description = reader.read_string()
+		language_tag = reader.read_string()
+
+		return cls(
+			recipient_channel=recipient_channel,
+			reason_code=reason_code,
+			description=description,
+			language_tag=language_tag)
+
+	def to_bytes(self):
+		writer = WriteHelper()
+		writer.write_uint8(self.code)
+		writer.write_uint32(self.recipient_channel)
+		writer.write_uint32(self.reason_code)
+		writer.write_string(self.description)
+		writer.write_string(self.language_tag)
+		return writer.data
 
 class SSH_MSG_CHANNEL_WINDOW_ADJUST(SSH_MSG):
 	"""
+	RFC4254, 5.2. Data Transfer
+		The window size specifies how many bytes the other party can send
+		before it must wait for the window to be adjusted.  Both parties use
+		the following message to adjust the window.
+
+			byte	SSH_MSG_CHANNEL_WINDOW_ADJUST
+			uint32	recipient channel
+			uint32	bytes to add
+
+		After receiving this message, the recipient MAY send the given number
+		of bytes more than it was previously allowed to send; the window size
+		is incremented.  Implementations MUST correctly handle window sizes
+		of up to 2^32 - 1 bytes.  THe window MUST NOT be increased above
+		2^32 - 1 bytes.
 	"""
 	code = 93
 	def __init__(self):
@@ -1263,6 +1500,37 @@ class SSH_MSG_CHANNEL_WINDOW_ADJUST(SSH_MSG):
 
 class SSH_MSG_CHANNEL_DATA(SSH_MSG):
 	"""
+	RFC4254, 5.2. Data Transfer
+		Data transfer is done with messages of the following type.
+
+			byte	SSH_MSG_CHANNEL_DATA
+			uint32	recipient channel
+			string	data
+
+		The maximum amount of data allowed is determined by the maximum
+		packet size for the channel, and the current window size, whichever
+		is smaller.  The window size is decremented by the amount of data
+		sent.  Both parties MAY ignore all extra data sent after the allowed
+		window is empty.
+
+		Implementations are expected to have some limit on the SSH transport
+		layer packet size (any limit for received packets MUST be 32768 bytes
+		or larger, as described in [SSH-TRANS]).  The implementation of the
+		SSH connection layer
+
+		o  MUST NOT advertise a maximum packet size that would result in
+		   transport packets larger than its transport layer is willing to
+		   receive.
+
+		o  MUST NOT generate data packets larger than its transport layer is
+		   willing to send, even if the remote end would be willing to accept
+		   very large packets.
+
+		Additionally, some channels can transfer several types of data.  An
+		example of this is strderr data from interactive sessions.  Such data
+		can be passed with SSH_MSG_CHANNEL_EXTENDED_DATA messages, where a
+		separate integer specifies the type of data.  The available types and
+		their interpretation depend on the type of channel.
 	"""
 	code = 94
 	def __init__(self, recipient_channel, data):
@@ -1273,7 +1541,6 @@ class SSH_MSG_CHANNEL_DATA(SSH_MSG):
 	def create_from_reader(cls, reader):
 		recipient_channel = reader.read_uint32()
 		data = reader.read_string()
-
 		return cls(
 			recipient_channel=recipient_channel,
 			data=data)
@@ -1285,13 +1552,60 @@ class SSH_MSG_CHANNEL_DATA(SSH_MSG):
 		writer.write_string(self.data)
 		return writer.data
 
-
 class SSH_MSG_CHANNEL_EXTENDED_DATA(SSH_MSG):
 	"""
+	From RFC4254, 5.2. Data Transfer
+		.
+			byte	SSH_MSG_CHANNEL_EXTENDED_DATA
+			uint32	recipient channel
+			uint32	data_type_code
+			string	data
+
+		Data sent with these messages consumes the same window as ordinary
+		data.
+
+		Currently, only the following type is defined.  Note that the value
+		for the 'data_type_code' is given in decimal format for readability,
+		but the values are actually uint32 values.
+
+			Symbolic name				data_type_code
+			-------------				--------------
+			SSH_EXTENDED_DATA_STDERR	1
+
+		Extended Channel Data Transfer 'data_type_code' values MUST be
+		assigned sequentially.  Requests for assignments of new Extended
+		Channel Data Transfer 'data_type_code' values and their associated
+		Extended Channel Data Transfer 'data' strings, in the range of
+		0x00000002 to 0xFDFFFFFF, MUST be done through the IETF CONSENSUS
+		method as described in [RFC2434].  The IANA will not assign Extended
+		0xFE000000 to 0xFFFFFFFF.  Extended Channel Data Transfer
+		'data_type_code' values in that range are left for PRIVATE USE, as
+		described in [RFC2434].  As is noted, the actual instructions to the
+		IANA are in [SSH-NUMBERS].
 	"""
 	code = 95
-	def __init__(self):
-		...
+	def __init__(self, recipient_channel, data_type_code, data):
+		self.recipient_channel = recipient_channel
+		self.data_type_code = data_type_code
+		self.data = data
+
+	@classmethod
+	def create_from_reader(cls, reader):
+		recipient_channel = reader.read_uint32()
+		data_type_code = reader.read_uint32()
+		data = reader.read_string()
+		return cls(
+			recipient_channel=recipient_channel,
+			data_type_code=data_type_code,
+			data=data)
+
+	def to_bytes(self):
+		writer = WriteHelper()
+		writer.write_uint8(self.code)
+		writer.write_uint32(self.recipient_channel)
+		writer.write_uint32(self.data_type_code)
+		writer.write_string(self.data)
+		return writer.data
 
 class SSH_MSG_CHANNEL_EOF(SSH_MSG):
 	"""
@@ -1309,21 +1623,257 @@ class SSH_MSG_CHANNEL_CLOSE(SSH_MSG):
 
 class SSH_MSG_CHANNEL_REQUEST(SSH_MSG):
 	"""
+	RFC4254, 5.4. Channel-Specific Requests
+		Many 'channel type' values have extensions that are specific to that
+		particular 'channel type'.  An example is requesting a pty (pseudo
+		terminal) for an interactive session.
+
+		All channel-specific requests use the following format.
+
+			byte	SSH_MSG_CHANNEL_REQUEST
+			uint32	recipient channel
+			string	request type in US-ASCII characters only
+			boolean	want reply
+			....	type-specific data follows
+
+		If 'want reply' is FALSE, no response will be sent to the request.
+		Otherwise, the recipient responds with either
+		SSH_MSG_CHANNEL_SUCCESS, SSH_MSG_CHANNEL_FAILURE, or request-specific
+		continuation messages.  If the request is not recognized or is not
+		supported for the channel, SSH_MSG_CHANNEL_FAILURE is returned.
+
+		This message does not consime window space and can be sent even if no
+		window space is available.  The values of 'request type' are local to
+		each channel type.
+
+		The client is allowed to send further messages without waiting for
+		the response to the request.
+
+		'request type' names follow the DNS extensibility naming convention
+		outlined in [SSH-ARCH] and [SSH-NUMBERS].
+
+	RFC4254, 6.2. Requesting a Pseudo-Terminal
+		A pseudo-terminal can be allocated for the session by sending the
+		following message.
+
+			byte	SSH_MSG_CHANNEL_REQUEST
+			uint32	recipient channel
+			string	"pty-req"
+			boolean	want_reply
+			string	TERM environment variable value (e.g., vt100)
+			uint32	terminal width, characters (e.g., 80)
+			uint32	terminal height, rows (e.g., 24)
+			uint32	terminal width, pixels (e.g., 640)
+			uint32	terminal height, pixels (e.g., 480)
+			string	encoded terminal modes
+
+		The 'encoded terminal modes' are described in Section 8.  Zero
+		dimension parameters MUST be ignored.  The character/row dimensions
+		override the pixel dimensions (when nonzero).  Pixel dimensions refer
+		to the drawable area of the window.
+
+		The dimension parameters are only informational.
+
+		The cliekt SHOULD ignore pty requests.
+
+	RFC4254, 6.3.1. Requesting X11 Forwarding
+		... I'll skip this for now
+
+	RFC4254, 6.4. Environment Variable Passing.
+		Environment variables may be passed to the shell/command to be
+		started later.  Uncontrolled setting of environment variables in a
+		privileged process can be a security hazard.  It is recommended that
+		implementations either maintain a list of allowable variable names or
+		only set environment variables after the server process has dropped
+		sufficient privileges.
+
+			byte	SSH_MSG_CHANNEL_REQUEST
+			uint32	recipient channel
+			string	"env"
+			boolean	want reply
+			string	variable name
+			string	variable value
+
+	RFC4254, 6.5. Starting a Shell or a Command
+		Once the session has been set up, a program is started at the remote
+		end.  The program can be a shell, an application program, or a
+		subsystem with a host-independent name.  Only one of these requests
+		can succeed per channel.
+
+			byte	SSH_MSG_CHANNEL_REQUEST
+			uint32	recipient channel
+			string	"shell"
+			boolean	want reply
+
+		This message will request that the user's default shell (typically
+		defined in /etc/passwd in UNIX systems) be started at the other end.
+
+			byte	SSH_MSG_CHANNEL_REQUEST
+			uint32	recipient channel
+			string	"exec"
+			boolean	want reply
+			string	command
+
+		This message will request that the server start the execution of the
+		given command.  The 'command' string may contain a path.  Normal
+		precautions MUST be taken to prevent the execution of unauthorized
+		commands.
+
+			byte	SSH_MSG_CHANNEL_REQUEST
+			uint32	recipient channel
+			string	"subsystem"
+			boolean	want reply
+			string	subsystem name
+
+		This last form executes a predefined subsystem.  It is expected that
+		these will include a general file transfer mechanism, and possibly
+		other features.  Implementations may also allow configuring more such
+		mechanisms.  As the user's shell is usually used to execute the
+		subsystem, it si advisable for the subsystem protocol to have a
+		"magic cookie" at the beginning of the protocol transaction to
+		distinguish it from arbitrary output generated by shell
+		initialization scripts, etc.  This spurious output from the shell may
+		be filtered out either at the server or at the client.
+
+		The server SHOULD NOT halt the execution of the protcol stack when
+		starting a shell or a program.  All input and output from these
+		SHOULD be redirected to the channel or to the encrypted tunnel.
+
+		It is RECOMMENDED that the reply to these messages be requested and
+		checked.  The client SHOULD ignore these messages.
+
+		Subsystem names follow the DNS extensibility naming convention
+		outlined in [SSH-NUMBERS].
 	"""
 	code = 98
-	def __init__(self):
-		...
+	def __init__(self,
+		recipient_channel, request_type,
+		want_reply, **kwargs
+	):
+		self.recipient_channel = recipient_channel
+		self.request_type = request_type
+		self.want_reply = want_reply
+
+		# Handle kwargs
+		for kwarg_name in kwargs:
+			self.__setattr__(kwarg_name, kwargs[kwarg_name])
+
+	@classmethod
+	def create_from_reader(cls, reader):
+		recipient_channel = reader.read_uint32()
+		request_type = reader.read_string(ascii=True)
+		want_reply = reader.read_bool()
+		
+		if request_type == "pty-req":
+			term_environment_variable = reader.read_string()
+			terminal_width = reader.read_uint32()
+			terminal_height = reader.read_uint32()
+			terminal_width_pixels = reader.read_uint32()
+			terminal_height_pixels = reader.read_uint32()
+			encoded_terminal_modes = reader.read_string()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type=request_type,
+				want_reply=want_reply,
+				term_environment_variable=term_environment_variable,
+				terminal_width=terminal_width,
+				terminal_height=terminal_height,
+				terminal_width_pixels=terminal_width_pixels,
+				terminal_height_pixels=terminal_height_pixels,
+				encoded_terminal_modes=encoded_terminal_modes)
+
+		elif request_type == "x11-req":
+			single_connection = reader.read_bool()
+			x11_authentication_protocol = reader.read_string(ascii=True)
+			x11_authentication_cookie = reader.read_string()
+			x11_screen_number = reader.read_uint32()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type=request_type,
+				want_reply=want_reply,
+				single_connection=single_connection,
+				x11_authentication_protocol=x11_authentication_protocol,
+				x11_authentication_cookie=x11_authentication_cookie,
+				x11_screen_number=x11_screen_number)
+
+		elif request_type == "env":
+			variable_name = reader.read_string()
+			variable_value = reader.read_string()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type=request_type,
+				want_reply=want_reply,
+				variable_name=variable_name,
+				variable_value=variable_value)
+
+		elif request_type == "shell":
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type=request_type,
+				want_reply=want_reply)
+
+		elif request_type == "exec":
+			command = reader.read_string()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type=request_type,
+				want_reply=want_reply,
+				command=command)
+
+		elif request_type == "subsystem":
+			subsystem_name = reader.read_string()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type=request_type,
+				want_reply=want_reply,
+				subsystem_name=subsystem_name)
+
+		else:
+			raise Exception("Unhandled request_type for CHANNEL_REQUEST")
+
+
+	def to_bytes(self):
+		writer = WriteHelper()
+		writer.write_uint8(self.code)
+		writer.write_string(self.request_type)
+		writer.write_bool(self.want_reply)
+		# TODO: Handle type specific data
+		return writer.data
 
 class SSH_MSG_CHANNEL_SUCCESS(SSH_MSG):
 	"""
 	"""
 	code = 99
-	def __init__(self):
-		...
+	def __init__(self, recipient_channel):
+		self.recipient_channel = recipient_channel
+
+	@classmethod
+	def create_from_reader(cls, reader):
+		recipient_channel = reader.read_uint32()
+		return cls(
+			recipient_channel=recipient_channel)
+
+	def to_bytes(self):
+		writer = WriteHelper()
+		writer.write_uint8(self.code)
+		writer.write_uint32(self.recipient_channel)
+		return writer.data
 
 class SSH_MSG_CHANNEL_FAILURE(SSH_MSG):
 	"""
 	"""
 	code = 100
-	def __init__(self):
-		...
+	def __init__(self, recipient_channel):
+		self.recipient_channel = recipient_channel
+
+	@classmethod
+	def create_from_reader(cls, reader):
+		recipient_channel = reader.read_uint32()
+		return cls(
+			recipient_channel=recipient_channel)
+
+	def to_bytes(self):
+		writer = WriteHelper()
+		writer.write_uint8(self.code)
+		writer.write_uint32(self.recipient_channel)
+		return writer.data
