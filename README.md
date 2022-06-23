@@ -18,6 +18,7 @@ pip install -r requirements.txt
 To run all tests and generate a coverage report, run
 ```sh
 coverage run -m unittest
+coverage html
 ```
 
 To run a single test module, run
