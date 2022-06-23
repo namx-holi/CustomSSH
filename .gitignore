@@ -4,3 +4,6 @@ venv
 # SSH Keys
 *.pub
 *.priv
+
+# Old code that is being rewritten
+old
