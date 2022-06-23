@@ -133,9 +133,9 @@ class DataReader:
 		num_bytes = self.read_bytes(mpint_len)
 		return int.from_bytes(num_bytes, "big", signed=True)
 
-	def read_fixed_length_int(self, size):
-		num_bytes = self.read_bytes(size)
-		return int.from_bytes(num_bytes, "big", signed=True)
+	# def read_fixed_length_int(self, size):
+	# 	num_bytes = self.read_bytes(size)
+	# 	return int.from_bytes(num_bytes, "big", signed=True)
 
 	def read_namelist(self):
 		namelist_len = self.read_uint32()
