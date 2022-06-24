@@ -33,6 +33,16 @@ coverage run -m unittest test.test_TESTMODULE.Test_CLASS.test_METHOD
 ```
 
 
+
+
+## Method
+When connection established, both sides exchange identification strings (RFC4253, 4.2)
+Immediately after, key exchange begins.
+
+
+
+
 ## TODO
+- Implement https://www.rfc-editor.org/rfc/rfc9142.html
 - Read https://datatracker.ietf.org/doc/html/rfc4253
 - Test tcpdump when SSHing into something
