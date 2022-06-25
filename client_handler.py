@@ -1,120 +1,184 @@
+
+import binascii
+from Crypto.Hash import SHA1
+from Crypto.PublicKey import RSA
+from Crypto.Signature import pkcs1_15
 from os import urandom
 
-from config import Config
-from ssh_trans.packet_handler import PacketHandler
-
 import messages
-
-# Lists of available algorithms
-from algorithms.compression import algorithms as compression_algorithms
-from algorithms.encryption import algorithms as encryption_algorithms
-from algorithms.key_exchange import algorithms as key_exchange_algorithms
-from algorithms.mac import algorithms as mac_algorithms
-from algorithms.public_key import algorithms as public_key_algorithms
-
-
-# Helper method to find matches between algorithms
-def find_match(client_list, server_list):
-	return next((
-		algo for algo in set(client_list)
-		if algo in server_list), None)
-
-
-
-class AlgorithmSetError(Exception): pass
-class AlgorithmSet:
-	def __init__(self, client_kexinit, server_kexinit):
-		# Find matches
-		key_exchange_algorithm = find_match(client_kexinit.kex_algorithms, server_kexinit.kex_algorithms)
-		public_key_algorithm = find_match(client_kexinit.server_host_key_algorithms, server_kexinit.server_host_key_algorithms)
-		serverside_encryption_algorithm = find_match(client_kexinit.encryption_algorithms_server_to_client, server_kexinit.encryption_algorithms_server_to_client)
-		serverside_compression_algorithm = find_match(client_kexinit.compression_algorithms_server_to_client, server_kexinit.compression_algorithms_server_to_client)
-		serverside_mac_algorithm = find_match(client_kexinit.mac_algorithms_server_to_client, server_kexinit.mac_algorithms_server_to_client)
-		clientside_encryption_algorithm = find_match(client_kexinit.encryption_algorithms_client_to_server, server_kexinit.encryption_algorithms_client_to_server)
-		clientside_compression_algorithm = find_match(client_kexinit.compression_algorithms_client_to_server, server_kexinit.compression_algorithms_client_to_server)
-		clientside_mac_algorithm = find_match(client_kexinit.mac_algorithms_client_to_server, server_kexinit.mac_algorithms_client_to_server)
-
-		# Raise an exception if there is no match for any
-		if key_exchange_algorithm is None: raise AlgorithmSetError("No key exchange algorithm")
-		if public_key_algorithm is None: raise AlgorithmSetError("No public key algorithm")
-		if serverside_encryption_algorithm is None: raise AlgorithmSetError("No serverside encryption algorithm")
-		if serverside_compression_algorithm is None: raise AlgorithmSetError("No serverside compression algorithm")
-		if serverside_mac_algorithm is None: raise AlgorithmSetError("No serverside mac algorithm")
-		if clientside_encryption_algorithm is None: raise AlgorithmSetError("No clientside encryption algorithm")
-		if clientside_compression_algorithm is None: raise AlgorithmSetError("No clientside compression algorithm")
-		if clientside_mac_algorithm is None: raise AlgorithmSetError("No clientside mac algorithm")
-
-		# Actually set the algorithms
-		self.key_exchange_algorithm = key_exchange_algorithms[key_exchange_algorithm]
-		self.public_key_algorithm = public_key_algorithms[public_key_algorithm]
-		self.serverside_encryption_algorithm = encryption_algorithms[serverside_encryption_algorithm]
-		self.serverside_compression_algorithm = compression_algorithms[serverside_compression_algorithm]
-		self.serverside_mac_algorithm = mac_algorithms[serverside_mac_algorithm]
-		self.clientside_encryption_algorithm = encryption_algorithms[clientside_encryption_algorithm]
-		self.clientside_compression_algorithm = compression_algorithms[clientside_compression_algorithm]
-		self.clientside_mac_algorithm = mac_algorithms[clientside_mac_algorithm]
-
+from config import Config
+from data_types import DataWriter
+from message_handler import MessageHandler
 
 
 class ClientHandler:
 
 	def __init__(self, conn):
-		# Exchange identification strings
-		self.client_identification_string = conn.recv(255)
-		self.server_identification_string = Config.IDENTIFICATION_STRING.encode("utf-8")
-		for line in Config.IDENTIFICATION_COMMENTS:
-			conn.send(line.encode("utf-8"))
-		conn.send(self.server_identification_string)
+		self.key = None # Our RSA key as an object
+		self.session_id = None # The first exchange hash H generated
 
-		# Start our packet handler
-		self.packet_handler = PacketHandler(conn)
+		# All values we need access to
+		self.V_C = None # Client's identification string
+		self.V_S = None # Server's identification string
+		self.I_C = None # The payload of the client's SSH_MSG_KEXINIT
+		self.I_S = None # The payload of the server's SSH_MSG_KEXINIT
+		self.K_S = None # The host key. Blob of self.key
+		self.e = None # The exchange value sent by the client
+		self.f = None # The exchange value sent by the server
+		self.K = None # The shared secret
 
-		# Saved instances of our algorithm exchange
-		self.client_kexinit = None
-		self.server_kexinit = None
 
-		# If the packet reading loop is running. On client disconnect,
+		# Exchange identification strings and save them
+		self.V_C = conn.recv(255).strip(b"\r\n")
+		self.V_S = Config.IDENTIFICATION_STRING.encode("utf-8")
+		for banner_line in Config.IDENTIFICATION_BANNER:
+			conn.send(banner_line.encode("utf-8") + b"\r\n")
+		conn.send(self.V_S + b"\r\n")
+
+		# If the message reading loop is running. On client disconnect,
 		#  the loop method should end.
 		self.running = False
+
+		# Start our message handler to send/receive messages
+		self.message_handler = MessageHandler(conn)
 
 
 	def loop(self):
 		self.running = True
 		while self.running:
-			msg = self.packet_handler.read_message()
-			self.handle_msg(msg)
+			msg = self.message_handler.recv()
+			if msg is None: # If no packet
+				# Just exit for now. This should be handled by polling.
+				print("No data recv")
+				return 
+			self.handle_message(msg)
 
 
-	def handle_msg(self, msg):
+	def handle_message(self, msg):
 		if isinstance(msg, messages.SSH_MSG_KEXINIT):
-			# Store the clients algorithms
-			self.client_kexinit = msg
+			self.handle_SSH_MSG_KEXINIT(msg)
 
-			# Respond with our available algorithms
-			cookie = urandom(16)
-			resp = messages.SSH_MSG_KEXINIT(
-				cookie=cookie,
-				kex_algorithms=key_exchange_algorithms.keys(),
-				server_host_key_algorithms=public_key_algorithms.keys(),
-				encryption_algorithms_client_to_server=encryption_algorithms.keys(),
-				encryption_algorithms_server_to_client=encryption_algorithms.keys(),
-				mac_algorithms_client_to_server=mac_algorithms.keys(),
-				mac_algorithms_server_to_client=mac_algorithms.keys(),
-				compression_algorithms_client_to_server=compression_algorithms.keys(),
-				compression_algorithms_server_to_client=compression_algorithms.keys(),
-				languages_client_to_server=Config.LANGUAGES,
-				languages_server_to_client=Config.LANGUAGES,
-				first_kex_packet_follows=False # Handling otherwise is hard.
-			)
-			self.server_kexinit = resp
-			self.packet_handler.send_message(resp)
+		elif isinstance(msg, messages.SSH_MSG_KEXDH_INIT):
+			self.handle_SSH_MSG_KEXDH_INIT(msg)
 
-			try:
-				self.algorithms = AlgorithmSet(self.client_kexinit, self.server_kexinit)
-			except AlgorithmSetError as e:
-				# If there are no matches for any of the algorithms, we
-				#  can drop our connection right here as the client would
-				#  too.
-				print(e.args)
-				self.running = False
-				return
+		elif isinstance(msg, messages.SSH_MSG_NEWKEYS):
+			self.handle_SSH_MSG_NEWKEYS(msg)
+
+		elif isinstance(msg, messages.SSH_MSG_SERVICE_REQUEST):
+			self.handle_SSH_MSG_SERVICE_REQUEST(msg)
+
+		else: # Unhandled message instance
+			self.running = False
+			print(f"UNHANDLED MESSAGE {msg}")
+			return
+
+
+	def handle_SSH_MSG_KEXINIT(self, msg):
+		# Store the client's SSH_MSG_KEXINIT payload
+		self.I_C = msg.payload()
+
+		# Respond with our available algorithms
+		cookie = urandom(16)
+		resp = messages.SSH_MSG_KEXINIT(
+			cookie=cookie,
+			kex_algorithms=["diffie-hellman-group14-sha1"],
+			server_host_key_algorithms=["ssh-rsa"],
+			encryption_algorithms_client_to_server=["aes128-cbc"],
+			encryption_algorithms_server_to_client=["aes128-cbc"],
+			mac_algorithms_client_to_server=["hmac-sha1"],
+			mac_algorithms_server_to_client=["hmac-sha1"],
+			compression_algorithms_client_to_server=["none"],
+			compression_algorithms_server_to_client=["none"],
+			languages_client_to_server=[],
+			languages_server_to_client=[],
+			first_kex_packet_follows=False
+		)
+		self.I_S = resp.payload()
+		self.message_handler.send(resp)
+
+		# Check if our algorithms match
+		...
+
+
+	def handle_SSH_MSG_KEXDH_INIT(self, msg):
+		# Store the client's exchange value
+		self.e = msg.e
+
+		# Generate our own key pair, and calculate the shared secret
+		# diffie-hellman-group14-sha1
+		self.y = int(binascii.hexlify(urandom(32)), base=16)
+		self.f = pow(Config.GENERATOR, self.y, Config.PRIME) # g^y % p
+		self.K = pow(self.e, self.y, Config.PRIME) # e^y % p
+
+		# Retrieve our host key, and also save as a blob
+		with open(Config.RSA_KEY) as f:
+			self.key = RSA.import_key(f.read())
+		w = DataWriter() # SSH-TRANS 6.6.
+		w.write_string("ssh-rsa")
+		w.write_mpint(self.key.e)
+		w.write_mpint(self.key.n)
+		self.K_S = w.data
+
+		# Generate our exchange hash H
+		HASH = lambda x: SHA1.new(x) # diffie-hellman-group14-sha1
+		w = DataWriter() # SSH-TRANS 8.
+		w.write_string(self.V_C)
+		w.write_string(self.V_S)
+		w.write_string(self.I_C)
+		w.write_string(self.I_S)
+		w.write_string(self.K_S)
+		w.write_mpint(self.e)
+		w.write_mpint(self.f)
+		w.write_mpint(self.K)
+		# diffie-hellman-group14-sha1
+		H = HASH(w.data).digest() # exchange hash
+
+		# The exchange hash H from the first key exchange is used as the
+		#  session identifier.
+		if self.session_id is None:
+			self.session_id = H
+
+		# Calculate the signature of H
+		# SSH_RSA (pkcs1_15), diffie-hellman-group14-sha1
+		# The signature algorithm MUST be applied over H, not original data.
+		sig = pkcs1_15.new(self.key).sign(SHA1.new(H))
+		w = DataWriter() # SSH-TRANS 6.6.
+		w.write_string("ssh-rsa")
+		w.write_uint32(len(sig))
+		w.write_byte(sig)
+		H_sig = w.data
+
+		# Respond with our key exchange reply
+		resp = messages.SSH_MSG_KEXDH_REPLY(
+			K_S=self.K_S,
+			f=self.f,
+			H_sig=H_sig
+		)
+		self.message_handler.send(resp)
+
+		# Set up our algorithms for the message hander
+		self.message_handler.setup_keys(HASH, self.K, H, self.session_id)
+
+		# Send out NEWKEYS message specifying we are ready to use our new
+		#  keys!
+		resp = messages.SSH_MSG_NEWKEYS()
+		self.message_handler.send(resp)
+
+
+	def handle_SSH_MSG_NEWKEYS(self, msg):
+		# Start encrypting all packets and checking integrity
+		self.message_handler.enable_encryption()
+		self.message_handler.enable_integrity()
+
+
+	def handle_SSH_MSG_SERVICE_REQUEST(self, msg):
+		service_name = msg.service_name
+
+		# TODO: Handle ssh-userauth
+		# TODO: Handle ssh-connection
+
+		# Unhandled service name
+		error_msg = f"Service {service_name} is not available."
+		print(f" [*] {error_msg}")
+		resp = messages.SSH_MSG_DISCONNECT.SERVICE_NOT_AVAILABLE(error_msg)
+		self.message_handler.send(resp)

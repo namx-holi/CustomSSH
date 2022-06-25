@@ -22,5 +22,6 @@ def main():
 		c.loop()
 		print("Exited gracefully")
 		print("\n"*4)
+		return
 
 main()

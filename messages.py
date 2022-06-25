@@ -61,22 +61,86 @@ class SSH_MSG:
 
 
 
-
-
 # 1 to 19: Transport layer generic (e.g., disconnect, ignore, debug,
 #  etc.)
 class SSH_MSG_DISCONNECT(SSH_MSG):
 	message_number = 1
-class SSH_MSG_IGNORE:
-	message_number = 2
-class SSH_MSG_UNIMPLEMENTED:
-	message_number = 3
-class SSH_MSG_DEBUG:
-	message_number = 4
-class SSH_MSG_SERVICE_REQUEST:
+	
+	# All different reason codes
+	# TODO: Convert these to classes that have the correct name
+	HOST_NOT_ALLOWED_TO_CONNECT		= lambda d: SSH_MSG_DISCONNECT(1, d)
+	PROTOCOL_ERROR					= lambda d: SSH_MSG_DISCONNECT(2, d)
+	KEY_EXCHANGE_FAILED				= lambda d: SSH_MSG_DISCONNECT(3, d)
+	RESERVED						= lambda d: SSH_MSG_DISCONNECT(4, d)
+	MAC_ERROR						= lambda d: SSH_MSG_DISCONNECT(5, d)
+	COMPRESSION_ERROR				= lambda d: SSH_MSG_DISCONNECT(6, d)
+	SERVICE_NOT_AVAILABLE			= lambda d: SSH_MSG_DISCONNECT(7, d)
+	PROTOCOL_VERSION_NOT_SUPPORTED	= lambda d: SSH_MSG_DISCONNECT(8, d)
+	HOST_KEY_NOT_VERIFIABLE			= lambda d: SSH_MSG_DISCONNECT(9, d)
+	CONNECTION_LOST					= lambda d: SSH_MSG_DISCONNECT(10, d)
+	BY_APPLICATION					= lambda d: SSH_MSG_DISCONNECT(11, d)
+	TOO_MANY_CONNECTIONS			= lambda d: SSH_MSG_DISCONNECT(12, d)
+	AUTH_CANCELLED_BY_USER			= lambda d: SSH_MSG_DISCONNECT(13, d)
+	NO_MORE_AUTH_METHODS_AVAILABLE	= lambda d: SSH_MSG_DISCONNECT(14, d)
+	ILLEGAL_USER_NAME				= lambda d: SSH_MSG_DISCONNECT(15, d)
+
+	# TODO: Handle language tag?
+	def __init__(self, reason_code, description, language_tag=""):
+		self.reason_code = reason_code
+		self.description = description
+		self.language_tag = language_tag
+
+	@classmethod
+	def from_reader(cls, r):
+		reason_code = r.read_uint32()
+		description = reader.read_string()
+		language_tag = reader.read_string()
+		return cls(reason_code, description, language_tag)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.reason_code)
+		w.write_string(self.description)
+		w.write_string(self.language_tag)
+		return w.data
+
+# class SSH_MSG_IGNORE(SSH_MSG):
+# 	message_number = 2
+# 	# TODO
+# 	...
+
+# class SSH_MSG_UNIMPLEMENTED(SSH_MSG):
+# 	message_number = 3
+# 	# TODO
+# 	...
+
+# class SSH_MSG_DEBUG(SSH_MSG):
+# 	message_number = 4
+# 	# TODO
+# 	...
+
+class SSH_MSG_SERVICE_REQUEST(SSH_MSG):
 	message_number = 5
-class SSH_MSG_SERVICE_ACCEPT:
-	message_number = 6
+
+	def __init__(self, service_name):
+		self.service_name = service_name
+
+	@classmethod
+	def from_reader(cls, r):
+		service_name = r.read_string()
+		return cls(service_name)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_string(self.service_name)
+		return w.data
+
+# class SSH_MSG_SERVICE_ACCEPT(SSH_MSG):
+# 	message_number = 6
+# 	# TODO
+# 	...
 
 
 # 20 to 29: Algorithm negotiation
@@ -158,17 +222,63 @@ class SSH_MSG_KEXINIT(SSH_MSG):
 		w.write_uint32(0) # Reserved for future extension
 		return w.data
 
+class SSH_MSG_NEWKEYS(SSH_MSG):
+	message_number = 21
+
+	def __init__(self):
+		pass
+
+	@classmethod
+	def from_reader(cls, r):
+		return cls()
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		return w.data
 
 
-# class SSH_MSG_NEWKEYS(SSH_MSG):
-# 	message_number = 21
+# 30 to 49: Key exchange method specific (numbers can be reused for
+#  different authentication methods)
+class SSH_MSG_KEXDH_INIT(SSH_MSG):
+	message_number = 30
 
+	def __init__(self, e):
+		self.e = e
 
+	@classmethod
+	def from_reader(cls, r):
+		e = r.read_mpint()
+		return cls(e)
 
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_mpint(e)
+		return w.data
 
-# # 30 to 49: Key exchange method specific (numbers can be reused for
-# #  different authentication methods)
-# ...
+class SSH_MSG_KEXDH_REPLY(SSH_MSG):
+	message_number = 31
+
+	def __init__(self, K_S, f, H_sig):
+		self.K_S = K_S
+		self.f = f
+		self.H_sig = H_sig
+
+	@classmethod
+	def from_reader(cls, r):
+		K_S = r.read_string()
+		f = r.read_mpint()
+		H_sig = r.read_string()
+		return cls(K_S, f, H_sig)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_string(self.K_S)
+		w.write_mpint(self.f)
+		w.write_string(self.H_sig)
+		return w.data
 
 
 # # 50 to 59: User authentication generic
