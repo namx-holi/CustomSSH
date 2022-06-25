@@ -84,6 +84,8 @@ name-list
 import struct
 
 
+# TODO: Replace data readers/writers with classes of the types!
+
 
 class DataReader:
 	def __init__(self, data):
@@ -133,10 +135,6 @@ class DataReader:
 		num_bytes = self.read_bytes(mpint_len)
 		return int.from_bytes(num_bytes, "big", signed=True)
 
-	# def read_fixed_length_int(self, size):
-	# 	num_bytes = self.read_bytes(size)
-	# 	return int.from_bytes(num_bytes, "big", signed=True)
-
 	def read_namelist(self):
 		namelist_len = self.read_uint32()
 		if namelist_len == 0:
@@ -146,6 +144,11 @@ class DataReader:
 
 		namelist_str = namelist_bytes.decode() # US-ASCII
 		return namelist_str.split(",")
+
+	# Used for huge numbers like shared secret
+	def read_fixed_length_int(self, size):
+		num_bytes = self.read_bytes(size)
+		return int.from_bytes(num_bytes, "big", signed=True)
 
 
 class DataWriter:
@@ -207,3 +210,8 @@ class DataWriter:
 		namelist_len = len(namelist_bytes)
 		self.write_uint32(namelist_len)
 		self.write_bytes(namelist_bytes)
+
+	# Used for huge numbers like shared secret
+	def write_fixed_length_int(self, num, size):
+		num_b = num.to_bytes(size, "big", signed=True)
+		self.write_bytes(num_b)
