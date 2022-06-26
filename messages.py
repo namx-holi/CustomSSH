@@ -68,21 +68,21 @@ class SSH_MSG_DISCONNECT(SSH_MSG):
 	
 	# All different reason codes
 	# TODO: Convert these to classes that have the correct name
-	HOST_NOT_ALLOWED_TO_CONNECT		= lambda d: SSH_MSG_DISCONNECT(1, d)
-	PROTOCOL_ERROR					= lambda d: SSH_MSG_DISCONNECT(2, d)
-	KEY_EXCHANGE_FAILED				= lambda d: SSH_MSG_DISCONNECT(3, d)
-	RESERVED						= lambda d: SSH_MSG_DISCONNECT(4, d)
-	MAC_ERROR						= lambda d: SSH_MSG_DISCONNECT(5, d)
-	COMPRESSION_ERROR				= lambda d: SSH_MSG_DISCONNECT(6, d)
-	SERVICE_NOT_AVAILABLE			= lambda d: SSH_MSG_DISCONNECT(7, d)
-	PROTOCOL_VERSION_NOT_SUPPORTED	= lambda d: SSH_MSG_DISCONNECT(8, d)
-	HOST_KEY_NOT_VERIFIABLE			= lambda d: SSH_MSG_DISCONNECT(9, d)
-	CONNECTION_LOST					= lambda d: SSH_MSG_DISCONNECT(10, d)
-	BY_APPLICATION					= lambda d: SSH_MSG_DISCONNECT(11, d)
-	TOO_MANY_CONNECTIONS			= lambda d: SSH_MSG_DISCONNECT(12, d)
-	AUTH_CANCELLED_BY_USER			= lambda d: SSH_MSG_DISCONNECT(13, d)
-	NO_MORE_AUTH_METHODS_AVAILABLE	= lambda d: SSH_MSG_DISCONNECT(14, d)
-	ILLEGAL_USER_NAME				= lambda d: SSH_MSG_DISCONNECT(15, d)
+	HOST_NOT_ALLOWED_TO_CONNECT     = lambda d: SSH_MSG_DISCONNECT(1, d)
+	PROTOCOL_ERROR                  = lambda d: SSH_MSG_DISCONNECT(2, d)
+	KEY_EXCHANGE_FAILED             = lambda d: SSH_MSG_DISCONNECT(3, d)
+	RESERVED                        = lambda d: SSH_MSG_DISCONNECT(4, d)
+	MAC_ERROR                       = lambda d: SSH_MSG_DISCONNECT(5, d)
+	COMPRESSION_ERROR               = lambda d: SSH_MSG_DISCONNECT(6, d)
+	SERVICE_NOT_AVAILABLE           = lambda d: SSH_MSG_DISCONNECT(7, d)
+	PROTOCOL_VERSION_NOT_SUPPORTED  = lambda d: SSH_MSG_DISCONNECT(8, d)
+	HOST_KEY_NOT_VERIFIABLE         = lambda d: SSH_MSG_DISCONNECT(9, d)
+	CONNECTION_LOST                 = lambda d: SSH_MSG_DISCONNECT(10, d)
+	BY_APPLICATION                  = lambda d: SSH_MSG_DISCONNECT(11, d)
+	TOO_MANY_CONNECTIONS            = lambda d: SSH_MSG_DISCONNECT(12, d)
+	AUTH_CANCELLED_BY_USER          = lambda d: SSH_MSG_DISCONNECT(13, d)
+	NO_MORE_AUTH_METHODS_AVAILABLE  = lambda d: SSH_MSG_DISCONNECT(14, d)
+	ILLEGAL_USER_NAME               = lambda d: SSH_MSG_DISCONNECT(15, d)
 
 	# TODO: Handle language tag?
 	def __init__(self, reason_code, description, language_tag=""):
@@ -561,31 +561,370 @@ class SSH_MSG_CHANNEL_OPEN(SSH_MSG):
 		sender_channel = r.read_uint32()
 		initial_window_size = r.read_uint32()
 		maximum_packet_size = r.read_uint32()
-		data = {} # TODO!!!!!!
-		print(f"Remaining data is {r.data[r.head:]}")
-		return cls(channel_type, sender_channel, initial_window_size, maximum_packet_size)
+		
+		# SSH-CONNECT 6.1.
+		if channel_type == "session":
+			return cls(
+				channel_type="session",
+				sender_channel=sender_channel,
+				initial_window_size=initial_window_size,
+				maximum_packet_size=maximum_packet_size)
 
-# class SSH_MSG_CHANNEL_OPEN_CONFIRMATION(SSH_MSG):
-# 	message_number = 91
-# class SSH_MSG_CHANNEL_OPEN_FAILURE(SSH_MSG):
-# 	message_number = 92
+		# SSH-CONNECT 6.3.2.
+		elif channel_type == "x11":
+			originator_address = r.read_string() # e.g. 192.168.7.38
+			originator_port = r.read_uint32()
+			return cls(
+				channel_type="x11",
+				sender_channel=sender_channel,
+				initial_window_size=initial_window_size,
+				maximum_packet_size=maximum_packet_size,
+				originator_address=originator_address,
+				originator_port=originator_port)
+
+		# SSH-CONNECT 7.2.
+		elif channel_type == "forwarded-tcpip":
+			connected_address = r.read_string()
+			connected_port = r.read_uint32()
+			originator_address = r.read_string() # e.g. 192.168.7.38
+			originator_port = r.read_uint32()
+			return cls(
+				channel_type="forwarded-tcpip",
+				sender_channel=sender_channel,
+				initial_window_size=initial_window_size,
+				maximum_packet_size=maximum_packet_size,
+				connected_address=connected_address,
+				connected_port=connected_port,
+				originator_address=originator_address,
+				originator_port=originator_port)
+
+		# SSH-CONNECT 7.2.
+		elif channel_type == "direct-tcpip":
+			host_to_connect = r.read_string()
+			port_to_connect = r.read_string()
+			originator_address = r.read_string() # e.g. 192.168.7.38
+			originator_port = r.read_uint32()
+			return cls(
+				channel_type="direct-tcpip",
+				sender_channel=sender_channel,
+				initial_window_size=initial_window_size,
+				maximum_packet_size=maximum_packet_size,
+				host_to_connect=host_to_connect,
+				port_to_connect=port_to_connect,
+				originator_address=originator_address,
+				originator_port=originator_port)
+
+		else:
+			print(f"!!!Remaining data in SSH_MSG_CHANNEL_OPEN is {r.data[r.head:]}")
+			return cls(channel_type, sender_channel, initial_window_size, maximum_packet_size)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.sender_channel)
+		w.write_uint32(self.initial_window_size)
+		w.write_uint32(self.maximum_packet_size)
+
+		# SSH-CONNECT 6.1.
+		if self.channel_type == "session":
+			return w.data
+
+		# SSH-CONNECT 6.3.2
+		elif self.channel_type == "x11":
+			w.write_string(self.originator_address)
+			w.write_uint32(self.originator_port)
+			return w.data
+
+		# SSH-CONNECT 7.2.
+		elif self.channel_type == "forwarded-tcpip":
+			w.write_string(self.connected_address)
+			w.write_uint32(self.connected_port)
+			w.write_string(self.originator_address)
+			w.write_uint32(self.originator_port)
+			return w.data
+
+		# SSH-CONNECT 7.2.
+		elif self.channel_type == "direct-tcpip":
+			w.write_string(self.host_to_connect)
+			w.write_uint32(self.port_to_connect)
+			w.write_string(self.originator_address)
+			w.write_uint32(self.originator_port)
+			return w.data
+
+		else:
+			print("POSSIBLE THERE IS MORE CHANNEL SPECIFIC DATA")
+			return w.data
+
+class SSH_MSG_CHANNEL_OPEN_CONFIRMATION(SSH_MSG):
+	message_number = 91
+
+	def __init__(self, recipient_channel, sender_channel, initial_window_size, maximum_packet_size, **data):
+		self.recipient_channel = recipient_channel
+		self.sender_channel = sender_channel
+		self.initial_window_size = initial_window_size
+		self.maximum_packet_size = maximum_packet_size
+		for field_name in data.keys():
+			self.__setattr__(field_name, data[field_name])
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		sender_channel = r.read_uint32()
+		initial_window_size = r.read_uint32()
+		maximum_packet_size = r.read_uint32()
+		data = {} # TODO!!!!!!!!
+		print(f"Remaining data is {r.data[r.head:]}")
+		return cls(recipient_channel, sender_channel, initial_window_size, maximum_packet_size)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		w.write_uint32(self.sender_channel)
+		w.write_uint32(self.initial_window_size)
+		w.write_uint32(self.maximum_packet_size)
+		print("POSSIBLE THERE IS MORE CHANNEL SPECIFIC DATA")
+		return w.data
+
+class SSH_MSG_CHANNEL_OPEN_FAILURE(SSH_MSG):
+	message_number = 92
+
+	# All different reason codes
+	# TODO: Convert these to classes that have the correct name
+	ADMINISTRATIVELY_PROHIBITED = lambda c,d: SSH_MSG_CHANNEL_OPEN_FAILURE(c, 1, d)
+	CONNECT_FAILED              = lambda c,d: SSH_MSG_CHANNEL_OPEN_FAILURE(c, 2, d)
+	UNKNOWN_CHANNEL_TYPE        = lambda c,d: SSH_MSG_CHANNEL_OPEN_FAILURE(c, 3, d)
+	RESOURCE_SHORTAGE           = lambda c,d: SSH_MSG_CHANNEL_OPEN_FAILURE(c, 4, d)
+
+	# TODO: Handle language tag?
+	def __init__(self, recipient_channel, reason_code, description, language_tag=""):
+		self.recipient_channel = recipient_channel
+		self.reason_code = reason_code
+		self.description = description
+		self.language_tag = language_tag
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		reason_code = r.read_uint32()
+		description = reader.read_string()
+		language_tag = reader.read_string()
+		return cls(recipient_channel, reason_code, description, language_tag)
+
+	def payload(self):
+		print(f"{self.recipient_channel=}")
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		w.write_uint32(self.reason_code)
+		w.write_string(self.description)
+		w.write_string(self.language_tag)
+		return w.data
+
 # class SSH_MSG_CHANNEL_WINDOW_ADJUST(SSH_MSG):
 # 	message_number = 93
+
 # class SSH_MSG_CHANNEL_DATA(SSH_MSG):
 # 	message_number = 94
+
 # class SSH_MSG_CHANNEL_EXTENDED_DATA(SSH_MSG):
 # 	message_number = 95
+
 # class SSH_MSG_CHANNEL_EOF(SSH_MSG):
 # 	message_number = 96
+
 # class SSH_MSG_CHANNEL_CLOSE(SSH_MSG):
 # 	message_number = 97
-# class SSH_MSG_CHANNEL_REQUEST(SSH_MSG):
-# 	message_number = 98
-# class SSH_MSG_CHANNEL_SUCCESS(SSH_MSG):
-# 	message_number = 99
-# class SSH_MSG_CHANNEL_FAILURE(SSH_MSG):
-# 	message_number = 100
 
+class SSH_MSG_CHANNEL_REQUEST(SSH_MSG):
+	message_number = 98
+
+	def __init__(self, recipient_channel, request_type, want_reply, **data):
+		self.recipient_channel = recipient_channel
+		self.request_type = request_type
+		self.want_reply = want_reply
+		for field_name in data.keys():
+			self.__setattr__(field_name, data[field_name])
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		request_type = r.read_string()
+		want_reply = r.read_bool()
+
+		# SSH-CONNECT 6.2.
+		if request_type == "pty-req":
+			term_environment_var = r.read_string()
+			term_width = r.read_uint32()
+			term_height = r.read_uint32()
+			term_width_pixels = r.read_uint32()
+			term_height_pixels = r.read_uint32()
+			terminal_modes = r.read_string(blob=True)
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="pty-req",
+				want_reply=want_reply,
+				term_environment_var=term_environment_var,
+				term_width=term_width,
+				term_height=term_height,
+				term_width_pixels=term_width_pixels,
+				term_height_pixels=term_height_pixels,
+				terminal_modes=terminal_modes)
+
+		# SSH-CONNECT 6.3.1.
+		elif request_type == "x11-req":
+			single_connection = r.read_bool()
+			auth_protocol = r.read_string()
+			auth_cookie = r.read_string()
+			screen_number = r.read_uint32()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="x11-req",
+				want_reply=want_reply,
+				single_connection=single_connection,
+				auth_protocol=auth_protocol,
+				auth_cookie=auth_cookie,
+				screen_number=screen_number)
+
+		# SSH-CONNECT 6.4.
+		elif request_type == "env":
+			name = r.read_string()
+			value = r.read_string()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="env",
+				want_reply=want_reply,
+				name=name,
+				value=value)
+
+		# SSH-CONNECT 6.5.
+		elif request_type == "shell":
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="shell",
+				want_reply=want_reply)
+
+		# SSH-CONNECT 6.5.
+		elif request_type == "exec":
+			command = r.read_string()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="exec",
+				want_reply=want_reply,
+				command=command)
+
+		# SSH-CONNECT 6.5.
+		elif request_type == "subsystem":
+			name = r.read_string()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="subsystem",
+				want_reply=want_reply,
+				name=name)
+
+		# SSH-CONNECT 6.7.
+		elif request_type == "window-change":
+			term_width = r.read_uint32()
+			term_height = r.read_uint32()
+			term_width_pixels = r.read_uint32()
+			term_height_pixels = r.read_uint32()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="window-change",
+				want_reply=False,
+				term_width=term_width,
+				term_height=term_height,
+				term_width_pixels=term_width_pixels,
+				term_height_pixels=term_height_pixels)
+
+		# SSH-CONNECT 6.8.
+		elif request_type == "xon-xoff":
+			client_can_do = r.read_bool()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="xon-xoff",
+				want_reply=False,
+				client_can_do=client_can_do)
+
+		# SSH-CONNECT 6.9.
+		elif request_type == "signal":
+			signal_name = r.read_string()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="signal",
+				want_reply=False,
+				signal_name=signal_name)
+
+		# SSH-CONNECT 6.10.
+		elif request_type == "exit-status":
+			exit_status = r.read_uint32()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="exit-status",
+				want_reply=False,
+				exit_status=exit_status)
+
+		# SSH-CONNECT 6.10.
+		elif request_type == "exit-signal":
+			signal_name = r.read_string()
+			core_dumped = r.read_bool()
+			error_message = r.read_string()
+			language_tag = r.read_string()
+			return cls(
+				recipient_channel=recipient_channel,
+				request_type="exit-signal",
+				want_reply=False,
+				signal_name=signal_name,
+				core_dumped=core_dumped,
+				error_message=error_message,
+				language_tag=language_tag)
+
+		else:
+			print(f"Remaining data in SSH_MSG_CHANNEL_REQUEST is {r.data[r.head:]}")
+			return cls(recipient_channel, request_type, want_reply)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		w.write_string(self.request_type)
+		w.write_bool(self.want_reply)
+		print("POSSIBLE THERE IS MORE TYPE SPECIFIC DATA")
+		return w.data
+
+class SSH_MSG_CHANNEL_SUCCESS(SSH_MSG):
+	message_number = 99
+
+	def __init__(self, recipient_channel):
+		self.recipient_channel = recipient_channel
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		return cls(recipient_channel)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		return w.data
+
+class SSH_MSG_CHANNEL_FAILURE(SSH_MSG):
+	message_number = 100
+
+	def __init__(self, recipient_channel):
+		self.recipient_channel = recipient_channel
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		return cls(recipient_channel)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		return w.data
 
 # # 128 to 191: Reserved
 # ...
@@ -593,63 +932,3 @@ class SSH_MSG_CHANNEL_OPEN(SSH_MSG):
 
 # # 192 to 255: Local extensions. Private use.
 # ...
-
-
-
-# """
-# RFC 4250, 4.2. Disconnection Messages Reason Codes and Descriptions
-
-# The Disconnection Message 'reason code' is a uint32 value. The
-# associated Disconnection Message 'description' is a human-readable
-# message that describes the disconnect reason.
-# """
-# class SSH_DISCONNECT_HOST_NOT_ALLOWED_TO_CONNECT:
-# 	reason_code = 1
-# class SSH_DISCONNECT_PROTOCOL_ERROR:
-# 	reason_code = 2
-# class SSH_DISCONNECT_KEY_EXCHANGE_FAILED:
-# 	reason_code = 3
-# class SSH_DISCONNECT_RESERVED:
-# 	reason_code = 4
-# class SSH_DISCONNECT_MAC_ERROR:
-# 	reason_code = 5
-# class SSH_DISCONNECT_COMPRESSION_ERROR:
-# 	reason_code = 6
-# class SSH_DISCONNECT_SERVICE_NOT_AVAILABLE:
-# 	reason_code = 7
-# class SSH_DISCONNECT_PROTOCOL_VERSION_NOT_SUPPORTED:
-# 	reason_code = 8
-# class SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE:
-# 	reason_code = 9
-# class SSH_DISCONNECT_CONNECTION_LOST:
-# 	reason_code = 10
-# class SSH_DISCONNECT_BY_APPLICATION:
-# 	reason_code = 11
-# class SSH_DISCONNECT_TOO_MANY_CONNECTIONS:
-# 	reason_code = 12
-# class SSH_DISCONNECT_AUTH_CANCELLED_BY_USER:
-# 	reason_code = 13
-# class SSH_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE:
-# 	reason_code = 14
-# class SSH_DISCONNECT_ILLEGAL_USER_NAME:
-# 	reason_code = 15
-
-
-
-
-# """
-# RFC 4250, 4.3 Channel Connection Failure Reason Codes and Descriptions
-
-# The Channel Connection Failure 'reason code' is a uint32 value. The
-# associated Channel Connection Failure 'description' text is a
-# human-readable message that describes the channel connection failure
-# reason.
-# """
-# class SSH_OPEN_ADMINISTRATIVELY_PROHIBITED:
-# 	reason_code = 1
-# class SSH_OPEN_CONNECT_FAILED:
-# 	reason_code = 2
-# class SSH_OPEN_UNKNOWN_CHANNEL_TYPE:
-# 	reason_code = 3
-# class SSH_OPEN_RESOURCE_SHORTAGE:
-# 	reason_code = 4

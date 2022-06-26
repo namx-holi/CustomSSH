@@ -14,6 +14,7 @@ class Config:
 	RSA_KEY = "rsa_key.priv"
 
 	# Successful password when logging in with such
+	AUTH_REQUIRED = False
 	PASSWORD = "password"
 
 	# Sent at any point during user auth. This can be used to set up a
