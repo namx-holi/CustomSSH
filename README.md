@@ -43,7 +43,7 @@ Immediately after, key exchange begins.
 ## Notes
 Currently only certain easy to implement algorithms are available. To get the ssh client to use these, use
 ```sh
-ssh -vv -p 2222 127.0.0.1 -oKexAlgorithms=diffie-hellman-group14-sha1 -oCiphers=aes128-cbc
+ssh -vv -p 2222 user@127.0.0.1 -oKexAlgorithms=diffie-hellman-group14-sha1 -oCiphers=aes128-cbc
 ```
 
 

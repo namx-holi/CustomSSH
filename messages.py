@@ -137,10 +137,22 @@ class SSH_MSG_SERVICE_REQUEST(SSH_MSG):
 		w.write_string(self.service_name)
 		return w.data
 
-# class SSH_MSG_SERVICE_ACCEPT(SSH_MSG):
-# 	message_number = 6
-# 	# TODO
-# 	...
+class SSH_MSG_SERVICE_ACCEPT(SSH_MSG):
+	message_number = 6
+	
+	def __init__(self, service_name):
+		self.service_name = service_name
+
+	@classmethod
+	def from_reader(cls, r):
+		service_name = r.read_string()
+		return cls(service_name)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_string(self.service_name)
+		return w.data
 
 
 # 20 to 29: Algorithm negotiation
@@ -281,15 +293,240 @@ class SSH_MSG_KEXDH_REPLY(SSH_MSG):
 		return w.data
 
 
-# # 50 to 59: User authentication generic
-# class SSH_MSG_USERAUTH_REQUEST(SSH_MSG):
-# 	message_number = 50
-# class SSH_MSG_USERAUTH_FAILURE(SSH_MSG):
-# 	message_number = 51
-# class SSH_MSG_USERAUTH_SUCCESS(SSH_MSG):
-# 	message_number = 52
-# class SSH_MSG_USERAUTH_BANNER(SSH_MSG):
-# 	message_number = 53
+# 50 to 59: User authentication generic
+class SSH_MSG_USERAUTH_REQUEST(SSH_MSG):
+	"""
+	Public Key Authentication
+		The use of public key authentication assumes that the client host
+		has not been compromised. It also assumes that the private key of
+		the server host has not been compromised. This risk can be
+		mitigated by the use of passphrases on private keys; however,
+		this is not an enforcable policy. The use of smartcards, or other
+		technology to make passphrases an enforcable policy is suggested.
+		The server could require both password and public key
+		authentication; however, this requires the client to expose its
+		password to the server.
+
+	Password Authentication
+		The password mechanism, as specified in the authentication
+		protocol, assumes that the server has not been compromised. If the
+		server has been compromised, using password authentication will
+		reveal a valid username/password combination to the attacker,
+		which may lead to further compromises. This vulnerability can be
+		mitigated by using an alternative form of authentication. For
+		example, public key authentication makes no assumptions about
+		security on the server.
+
+	Host-Based Authentication
+		Host-based authentication assumes that the client has not been
+		compromised. There are no mitigating strategies, other than to use
+		host-based authentication in combination with another authentication
+		method.
+
+	The "none" Authentication Request
+		A client may request a list of authentication 'method name' values
+		that may continue by using the "none" authentication 'method name'.
+		If no authentication is needed for the user, the server MUST return
+		SSH_MSG_USERAUTH_SUCCESS. Otherwise, the server MUST return
+		SSH_MSG_USERAUTH_FAILURE and MAY return with it a list of methods
+		that may continue in its 'authentications taht can continue' value.
+		This 'method name' MUST NOT be listed as supported by the server.
+	"""
+	message_number = 50
+
+	def __init__(self, user_name, service_name, method_name, **method_fields):
+		self.user_name = user_name
+		self.service_name = service_name
+		self.method_name = method_name
+		for field_name in method_fields.keys():
+			self.__setattr__(field_name, method_fields[field_name])
+
+	@classmethod
+	def from_reader(cls, r):
+		user_name = r.read_string()
+		service_name = r.read_string()
+		method_name = r.read_string()
+
+		# SSH-USERAUTH, 7.
+		if method_name == "publickey":
+			authenticating = r.read_bool()
+			if not authenticating: # boolean = FALSE
+				algorithm_name = r.read_string()
+				key_blob = r.read_string(blob=True)
+				return cls(
+					user_name=user_name,
+					service_name=service_name,
+					method_name="publickey",
+					authenticating=False,
+					algorithm_name=algorithm_name,
+					key_blob=key_blob)
+
+			else: # boolean = TRUE
+				algorithm_name = r.read_string()
+				public_key = r.read_string()
+				signature = r.read_string()
+				return cls(
+					user_name=user_name,
+					service_name=service_name,
+					method_name="publickey",
+					authenticating=True,
+					algorithm_name=algorithm_name,
+					public_key=public_key,
+					signature=signature)
+
+		# SSH-USERAUTH, 8.
+		elif method_name == "password":
+			changing_password = r.read_bool()
+			if not changing_password: # boolean = FALSE
+				password = r.read_string()
+				return cls(
+					user_name=user_name,
+					service_name=service_name,
+					method_name="password",
+					changing_password=False,
+					password=password)
+
+			else: # boolean = TRUE
+				password = r.read_string()
+				new_password = r.read_string()
+				return cls(
+					user_name=user_name,
+					service_name=service_name,
+					method_name="password",
+					changing_password=True,
+					password=password,
+					new_password=new_password)
+
+		# SSH-USERAUTH, 9.
+		elif method_name == "hostbased":
+			algorithm_name = r.read_string()
+			certificates = r.read_string()
+			host_name = r.read_string()
+			client_user_name = r.read_string()
+			signature = r.read_string()
+			return cls(
+				user_name=user_name,
+				service_name=service_name,
+				method_name="hostbased",
+				algorithm_name=algorithm_name,
+				certificates=certificates,
+				host_name=host_name,
+				client_user_name=client_user_name,
+				signature=signature)
+
+		elif method_name == "none":
+			return cls(
+				user_name=user_name,
+				service_name=service_name,
+				method_name="none")
+
+		else:
+			return cls(
+				user_name=user_name,
+				service_name=service_name,
+				method_name=method_name)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_string(self.user_name)
+		w.write_string(self.service_name)
+		w.write_string(self.method_name)
+
+		# SSH-USERAUTH, 7.
+		if self.method_name == "publickey":
+			if self.authenticating: # boolean = FALSE
+				w.write_bool(False)
+				w.write_string(self.algorithm_name)
+				w.write_string(self.key_blob)
+				return w.data
+
+			else: # boolean = TRUE
+				w.write_bool(True)
+				w.write_string(self.algorithm_name)
+				w.write_string(self.public_key)
+				w.write_string(self.signature)
+				return w.data
+
+		# SSH-USERAUTH, 8.
+		elif self.method_name == "password":
+			if self.changing_password: # boolean = FALSE
+				w.write_bool(False)
+				w.write_string(self.password)
+				return w.data
+
+			else: # boolean = FALSE
+				w.write_bool(True)
+				w.write_string(self.password)
+				w.write_string(self.new_password)
+				return w.data
+
+		# SSH-USERAUTH, 9.
+		elif method_name == "hostbased":
+			w.write_string(self.algorithm_name)
+			w.write_string(self.certificates)
+			w.write_string(self.host_name)
+			w.write_string(self.client_user_name)
+			w.write_string(self.signature)
+			return w.data
+
+		else:
+			return w.data
+
+class SSH_MSG_USERAUTH_FAILURE(SSH_MSG):
+	message_number = 51
+
+	def __init__(self, available_authentications, partial_success):
+		self.available_authentications = available_authentications
+		self.partial_success = partial_success
+
+	@classmethod
+	def from_reader(cls, r):
+		available_authentications = r.read_namelist()
+		partial_success = r.read_bool()
+		return cls(available_authentications, partial_success)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_namelist(self.available_authentications)
+		w.write_bool(self.partial_success)
+		return w.data
+
+class SSH_MSG_USERAUTH_SUCCESS(SSH_MSG):
+	message_number = 52
+
+	def __init__(self):
+		...
+
+	@classmethod
+	def from_reader(cls):
+		return cls()
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		return w.data
+
+class SSH_MSG_USERAUTH_BANNER(SSH_MSG):
+	message_number = 53
+
+	def __init__(self, message, language_tag=""):
+		self.message = message
+		self.language_tag = language_tag
+
+	@classmethod
+	def from_reader(cls, r):
+		message = r.read_string()
+		language_tag = r.read_string()
+		return cls(message, language_tag)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_string(self.message)
+		w.write_string(self.language_tag)
+		return w.data
 
 
 # # 60 to 79: User authentication method specific (numbers can be reused
@@ -307,8 +544,27 @@ class SSH_MSG_KEXDH_REPLY(SSH_MSG):
 
 
 # # 90 to 127: Channel related methods
-# class SSH_MSG_CHANNEL_OPEN(SSH_MSG):
-# 	message_number = 90
+class SSH_MSG_CHANNEL_OPEN(SSH_MSG):
+	message_number = 90
+
+	def __init__(self, channel_type, sender_channel, initial_window_size, maximum_packet_size, **data):
+		self.channel_type = channel_type
+		self.sender_channel = sender_channel
+		self.initial_window_size = initial_window_size
+		self.maximum_packet_size = maximum_packet_size
+		for field_name in data.keys():
+			self.__setattr__(field_name, data[field_name])
+
+	@classmethod
+	def from_reader(cls, r):
+		channel_type = r.read_string()
+		sender_channel = r.read_uint32()
+		initial_window_size = r.read_uint32()
+		maximum_packet_size = r.read_uint32()
+		data = {} # TODO!!!!!!
+		print(f"Remaining data is {r.data[r.head:]}")
+		return cls(channel_type, sender_channel, initial_window_size, maximum_packet_size)
+
 # class SSH_MSG_CHANNEL_OPEN_CONFIRMATION(SSH_MSG):
 # 	message_number = 91
 # class SSH_MSG_CHANNEL_OPEN_FAILURE(SSH_MSG):

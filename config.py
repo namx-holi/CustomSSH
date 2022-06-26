@@ -12,3 +12,11 @@ class Config:
 
 	# Our RSA private key file
 	RSA_KEY = "rsa_key.priv"
+
+	# Successful password when logging in with such
+	PASSWORD = "password"
+
+	# Sent at any point during user auth. This can be used to set up a
+	#  game to guess the password.
+	USERAUTH_BANNER = f"Bro the password its '{PASSWORD}'\n"
+

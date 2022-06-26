@@ -116,13 +116,13 @@ class DataReader:
 		b = self.read_bytes(8)
 		return struct.unpack(">Q", b)[0]
 
-	def read_string(self, us_ascii=True):
+	def read_string(self, blob=False):
 		str_len = self.read_uint32()
 		str_bytes = self.read_bytes(str_len)
 
 		# US-ASCII for internal names, otherwise UTF-8
-		if us_ascii:
-			return str_bytes.decode()
+		if blob:
+			return str_bytes
 		return str_bytes.decode("utf-8")
 
 	def read_mpint(self):
