@@ -1,11 +1,8 @@
 
 import math
 import struct
-from Crypto.Cipher import AES
-from Crypto.Hash import HMAC, SHA1
 from os import urandom
 
-from data_types import DataWriter
 from messages import SSH_MSG
 
 
@@ -47,48 +44,89 @@ class MessageHandler:
 		self._server_sequence_number = 0
 
 		# Unencrypted traffic uses a block size of 8
-		self.client_block_size = 8 
-		self.server_block_size = 8
+		# self.client_block_size = 8 
+		# self.server_block_size = 8
 
-		# Encryption and integrity keys expected lengths in bytes
-		self.initial_iv_client_len     = 16 # aes128-cbc
-		self.initial_iv_server_len     = 16 # aes128-cbc
-		self.encryption_key_client_len = 16 # aes128-cbc
-		self.encryption_key_server_len = 16 # aes128-cbc
-		self.integrity_key_client_len  = 20 # hmac-sha1
-		self.integrity_key_server_len  = 20 # hmac-sha1
+		# Algorithms being used. If None, they are ignored
+		self.encryption_algo_c_to_s = None
+		self.encryption_algo_s_to_c = None
+		self.mac_algo_c_to_s = None
+		self.mac_algo_s_to_c = None
+		self.compression_algo_c_to_s = None
+		self.compression_algo_s_to_c = None
 
-		# Sizes of MACs
-		self.integrity_hash_client_len = 20 # hmac-sha1
-		self.integrity_hash_server_len = 20 # hmac-sha1
+		# # Encryption and integrity keys expected lengths in bytes
+		# self.initial_iv_client_len     = 16 # aes128-cbc
+		# self.initial_iv_server_len     = 16 # aes128-cbc
+		# self.encryption_key_client_len = 16 # aes128-cbc
+		# self.encryption_key_server_len = 16 # aes128-cbc
+		# self.integrity_key_client_len  = 20 # hmac-sha1
+		# self.integrity_key_server_len  = 20 # hmac-sha1
 
-		# Encryption and integrity keys
-		self.initial_iv_client     = None
-		self.initial_iv_server     = None
-		self.encryption_key_client = None
-		self.encryption_key_server = None
-		self.integrity_key_client  = None
-		self.integrity_key_server  = None
+		# # Sizes of MACs
+		# self.integrity_hash_client_len = 20 # hmac-sha1
+		# self.integrity_hash_server_len = 20 # hmac-sha1
 
-		# Instances of ciphers are stored after initialised
-		self.encryption_cipher_client = None
-		self.encryption_cipher_server = None
+		# # Encryption and integrity keys
+		# self.initial_iv_client     = None
+		# self.initial_iv_server     = None
+		# self.encryption_key_client = None
+		# self.encryption_key_server = None
+		# self.integrity_key_client  = None
+		# self.integrity_key_server  = None
 
-		self.encryption_enabled = False
-		self.mac_enabled = False
+		# # Instances of ciphers are stored after initialised
+		# self.encryption_cipher_client = None
+		# self.encryption_cipher_server = None
+
+		# self.encryption_enabled = False
+		# self.mac_enabled = False
+
+
+	# Wrappers for algorithms
+	@property
+	def client_block_size(self):
+		if self.encryption_algo_c_to_s is None:
+			return 8
+		return self.encryption_algo_c_to_s.iv_length
+	@property
+	def server_block_size(self):
+		if self.encryption_algo_s_to_c is None:
+			return 8
+		return self.encryption_algo_s_to_c.iv_length
+	def decrypt(self, data):
+		if self.encryption_algo_c_to_s is None:
+			return data
+		return self.encryption_algo_c_to_s.decrypt(data)
+	def encrypt(self, data):
+		if self.encryption_algo_s_to_c is None:
+			return data
+		return self.encryption_algo_s_to_c.encrypt(data)
+	def verify_mac(self, data):
+		if self.mac_algo_c_to_s is None:
+			return True
+		mac = self.conn.recv(self.mac_algo_c_to_s.hash_length)
+		return self.mac_algo_c_to_s.verify(data, self._client_sequence_number, mac)
+	def generate_mac(self, data):
+		if self.mac_algo_s_to_c is None:
+			return b""
+		return self.mac_algo_s_to_c.generate(data, self._server_sequence_number)
+	def decompress(self, data):
+		if self.compression_algo_c_to_s is None:
+			return data
+		return self.compression_algo_c_to_s.decompress(data)
+	def compress(self, data):
+		if self.compression_algo_s_to_c is None:
+			return data
+		return self.compression_algo_s_to_c.compress(data)
 
 
 	def recv(self):
-		# TODO: Compression
-
 		# Read the first block that should contain the packet length.
 		first_block = self.conn.recv(max(8, self.client_block_size))
 		if first_block == b"":
 			return None # Empty packet
-
-		# If encryption keys are set, then we need to decrypt this block
-		if self.encryption_enabled:
-			first_block = self.decrypt(first_block)
+		first_block = self.decrypt(first_block)
 
 		# Packet length is stored in the first four bytes in a uint32
 		packet_len = struct.unpack(">I", first_block[:4])[0]
@@ -99,25 +137,21 @@ class MessageHandler:
 		#  already read 4 one block, so accomodate for that too.
 		remaining_payload_length = packet_len - self.client_block_size + 4
 		remaining_blocks = self.conn.recv(remaining_payload_length)
-		# If encryption keys are set, then we need to decrypt these blocks
-		if self.encryption_enabled:
-			remaining_blocks = self.decrypt(remaining_blocks)
+		remaining_blocks = self.decrypt(remaining_blocks)
 		full_packet = first_block + remaining_blocks
 
 		# Read MAC and verify if keys are set
-		if self.mac_enabled:
-			mac = self.conn.recv(self.integrity_hash_client_len)
-			if not self.verify_mac(first_block + remaining_blocks, mac):
-				# For now, just do nothing.
-				print("FAILED TO VERIFY MAC")
+		if not self.verify_mac(full_packet):
+			# For now, just do nothing.
+			print("FAILED TO VERIFY MAC. TODO: HANDLE")
 
 		# Read the padding and remove it from payload
 		padded_compressed_payload = full_packet[4:] # Removing packet length bytes
 		padding_length = struct.unpack(">B", padded_compressed_payload[0:1])[0]
 		compressed_payload = padded_compressed_payload[1:-padding_length]
 
-		# TODO: Handle decompression
-		payload = compressed_payload
+		# Handle decompression
+		payload = self.decompress(compressed_payload)
 
 		# Increment the client sequence number
 		self._client_sequence_number += 1
@@ -129,11 +163,10 @@ class MessageHandler:
 
 
 	def send(self, msg):
-		# TODO: Compression
 		print(f" -> Sending {msg.__class__.__name__}")
 
-		# TODO: Handle compression
-		compressed_payload = msg.payload()
+		# Handle compression
+		compressed_payload = self.compress(msg.payload())
 
 		# Calculate the padding
 		padding_length = self._calculate_padding_length(compressed_payload)
@@ -150,22 +183,14 @@ class MessageHandler:
 			struct.pack(">I", packet_length)
 			+ data)
 
-		# If keys are set, we need to generate mac
-		if self.mac_enabled:
-			mac = self.generate_mac(data)
-		else:
-			mac = b""
-
-		# If keys are set, we need to encrypt
-		if self.encryption_enabled:
-			data = self.encrypt(data)
-
-		# Add on the mac
-		data += mac
+		# Generate mac, encrypt data, and generate full packet
+		mac = self.generate_mac(data)
+		data = self.encrypt(data)
+		full_packet = data + mac
 
 		# Increment the server-side sequence number and send
 		self._server_sequence_number += 1
-		self.conn.send(data)
+		self.conn.send(full_packet)
 
 
 	def _calculate_padding_length(self, data):
@@ -188,78 +213,3 @@ class MessageHandler:
 			padding_length += self.server_block_size
 
 		return padding_length
-
-
-	def setup_keys(self, HASH, K, H, session_id):
-		# K is a large number. It needs to be an mpint however
-		w = DataWriter()
-		w.write_mpint(K)
-		K = w.data
-
-		# Method to reduce duplicate code to handle generating a key
-		#  with the correct length
-		def _generate_key(X, length): # SSH-TRANS 7.2.
-			# HASH(K || H || X || session_id)
-			key = HASH(K + H + X + session_id).digest()
-			# If the key length needed is longer than the output of HASH,
-			#  the key is extended by computing HASH of the concattenation
-			#  of K and H and the entire key so far, and apppending the
-			#  resulting bytes to the key. This process is repeated until
-			#  enough key material is available.
-			while len(key) < length:
-				key += HASH(K + H + key).digest()
-
-			# Key data MUST be taken from the beginning of the hash output.
-			return key[:length]
-
-		self.initial_iv_client     = _generate_key(b"A", self.initial_iv_client_len)
-		self.initial_iv_server     = _generate_key(b"B", self.initial_iv_server_len)
-		self.encryption_key_client = _generate_key(b"C", self.encryption_key_client_len)
-		self.encryption_key_server = _generate_key(b"D", self.encryption_key_server_len)
-		self.integrity_key_client  = _generate_key(b"E", self.integrity_key_client_len)
-		self.integrity_key_server  = _generate_key(b"F", self.integrity_key_server_len)
-
-
-	def enable_encryption(self):
-		self.client_block_size = self.initial_iv_client_len
-		self.server_block_size = self.initial_iv_server_len
-		self.encryption_enabled = True
-
-	def enable_integrity(self):
-		self.mac_enabled = True
-
-
-	def encrypt(self, data): # aes128-cbc
-		# If not initialised, we need to init with our iv
-		if self.encryption_cipher_server is None:
-			self.encryption_cipher_server = AES.new(
-				self.encryption_key_server,
-				AES.MODE_CBC,
-				self.initial_iv_server)
-		# Return encrypted data
-		return self.encryption_cipher_server.encrypt(data)
-
-
-	def decrypt(self, data): # aes128-cbc
-		# If not initialised, we need to init with clients iv
-		if self.encryption_cipher_client is None:
-			self.encryption_cipher_client = AES.new(
-				self.encryption_key_client,
-				AES.MODE_CBC,
-				self.initial_iv_client)
-		# Return decrypted data
-		return self.encryption_cipher_client.decrypt(data)
-
-
-	def generate_mac(self, data): # hmac-sha1
-		sequence_number_b = struct.pack(">I", self._server_sequence_number)
-		h = HMAC.new(self.integrity_key_server, digestmod=SHA1)
-		h.update(sequence_number_b + data)
-		return h.digest()
-
-
-	def verify_mac(self, data, mac): # hmac-sha1
-		sequence_number_b = struct.pack(">I", self._client_sequence_number)
-		h = HMAC.new(self.integrity_key_client, digestmod=SHA1)
-		h .update(sequence_number_b + data)
-		return h.digest() == mac

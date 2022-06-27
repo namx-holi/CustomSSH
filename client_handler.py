@@ -1,11 +1,6 @@
 
-import binascii
-from Crypto.Hash import SHA1
-from Crypto.PublicKey import RSA
-from Crypto.Signature import pkcs1_15
-from os import urandom
-
 import messages
+from algorithms import AlgorithmHandler, NoMatchingAlgorithm
 from config import Config
 from data_types import DataWriter
 from message_handler import MessageHandler
@@ -29,14 +24,15 @@ class ClientHandler:
 		self.session_id = None # The first exchange hash H generated
 
 		# All values we need access to
-		self.V_C = None # Client's identification string
-		self.V_S = None # Server's identification string
-		self.I_C = None # The payload of the client's SSH_MSG_KEXINIT
-		self.I_S = None # The payload of the server's SSH_MSG_KEXINIT
-		self.K_S = None # The host key. Blob of self.key
-		self.e = None # The exchange value sent by the client
-		self.f = None # The exchange value sent by the server
-		self.K = None # The shared secret
+		self.algorithm_handler = AlgorithmHandler()
+		# self.V_C = None # Client's identification string
+		# self.V_S = None # Server's identification string
+		# self.I_C = None # The payload of the client's SSH_MSG_KEXINIT
+		# self.I_S = None # The payload of the server's SSH_MSG_KEXINIT
+		# self.K_S = None # The host key. Blob of self.key
+		# self.e = None # The exchange value sent by the client
+		# self.f = None # The exchange value sent by the server
+		# self.K = None # The shared secret
 
 		# All values used during and after user authentication
 		self.auth_required = Config.AUTH_REQUIRED
@@ -61,12 +57,15 @@ class ClientHandler:
 		####################
 		# SETUP CONNECTION #
 		####################
-		# Exchange identification strings and save them
-		self.V_C = conn.recv(255).strip(b"\r\n")
-		self.V_S = Config.IDENTIFICATION_STRING.encode("utf-8")
+		# Exchange identification strings
+		V_C = conn.recv(255)
+		V_S = Config.IDENTIFICATION_STRING.encode("utf-8")
 		for banner_line in Config.IDENTIFICATION_BANNER:
 			conn.send(banner_line.encode("utf-8") + b"\r\n")
-		conn.send(self.V_S + b"\r\n")
+		conn.send(V_S + b"\r\n")
+
+		# Save the exchange strings in algorithm handler
+		self.algorithm_handler.set_exchange_strings(V_C, V_S)
 
 		# If the message reading loop is running. On client disconnect,
 		#  the loop method should end.
@@ -116,101 +115,37 @@ class ClientHandler:
 
 
 	def handle_SSH_MSG_KEXINIT(self, msg):
-		# Store the client's SSH_MSG_KEXINIT payload
-		self.I_C = msg.payload()
-
-		# Respond with our available algorithms
-		cookie = urandom(16)
-		resp = messages.SSH_MSG_KEXINIT(
-			cookie=cookie,
-			kex_algorithms=["diffie-hellman-group14-sha1"],
-			server_host_key_algorithms=["ssh-rsa"],
-			encryption_algorithms_client_to_server=["aes128-cbc"],
-			encryption_algorithms_server_to_client=["aes128-cbc"],
-			mac_algorithms_client_to_server=["hmac-sha1"],
-			mac_algorithms_server_to_client=["hmac-sha1"],
-			compression_algorithms_client_to_server=["none"],
-			compression_algorithms_server_to_client=["none"],
+		# Generate our own KEXINIT and send
+		server_kexinit = self.algorithm_handler.generate_server_kexinit(
 			languages_client_to_server=[],
 			languages_server_to_client=[],
-			first_kex_packet_follows=False
-		)
-		self.I_S = resp.payload()
-		self.message_handler.send(resp)
+			first_kex_packet_follows=False)
+		self.message_handler.send(server_kexinit)
 
-		# Check if our algorithms match
-		...
+		# Handle the client's KEXINIT to find matches
+		try:
+			self.algorithm_handler.handle_client_KEXINIT(msg)
+		except NoMatchingAlgorithm:
+			self.running = False
+			return
 
 
 	def handle_SSH_MSG_KEXDH_INIT(self, msg):
-		# Store the client's exchange value
-		self.e = msg.e
+		# Handle the clients KEXDH_INIT to generate our shared secret
+		#  and let the client know we've done so
+		server_kexdh_reply = self.algorithm_handler.handle_client_KEXDH_INIT(msg)
+		self.message_handler.send(server_kexdh_reply)
 
-		# Generate our own key pair, and calculate the shared secret
-		# diffie-hellman-group14-sha1
-		self.y = int(binascii.hexlify(urandom(32)), base=16)
-		self.f = pow(Config.GENERATOR, self.y, Config.PRIME) # g^y % p
-		self.K = pow(self.e, self.y, Config.PRIME) # e^y % p
-
-		# Retrieve our host key, and also save as a blob
-		with open(Config.RSA_KEY) as f:
-			self.key = RSA.import_key(f.read())
-		w = DataWriter() # SSH-TRANS 6.6.
-		w.write_string("ssh-rsa")
-		w.write_mpint(self.key.e)
-		w.write_mpint(self.key.n)
-		self.K_S = w.data
-
-		# Generate our exchange hash H
-		HASH = lambda x: SHA1.new(x) # diffie-hellman-group14-sha1
-		w = DataWriter() # SSH-TRANS 8.
-		w.write_string(self.V_C)
-		w.write_string(self.V_S)
-		w.write_string(self.I_C)
-		w.write_string(self.I_S)
-		w.write_string(self.K_S)
-		w.write_mpint(self.e)
-		w.write_mpint(self.f)
-		w.write_mpint(self.K)
-		# diffie-hellman-group14-sha1
-		H = HASH(w.data).digest() # exchange hash
-
-		# The exchange hash H from the first key exchange is used as the
-		#  session identifier.
-		if self.session_id is None:
-			self.session_id = H
-
-		# Calculate the signature of H
-		# SSH_RSA (pkcs1_15), diffie-hellman-group14-sha1
-		# The signature algorithm MUST be applied over H, not original data.
-		sig = pkcs1_15.new(self.key).sign(SHA1.new(H))
-		w = DataWriter() # SSH-TRANS 6.6.
-		w.write_string("ssh-rsa")
-		w.write_uint32(len(sig))
-		w.write_byte(sig)
-		H_sig = w.data
-
-		# Respond with our key exchange reply
-		resp = messages.SSH_MSG_KEXDH_REPLY(
-			K_S=self.K_S,
-			f=self.f,
-			H_sig=H_sig
-		)
-		self.message_handler.send(resp)
-
-		# Set up our algorithms for the message hander
-		self.message_handler.setup_keys(HASH, self.K, H, self.session_id)
-
-		# Send out NEWKEYS message specifying we are ready to use our new
-		#  keys!
+		# Set up all the algorithms that are going to be used and let
+		#  the client know we are ready to start using them
+		self.algorithm_handler.setup_algorithms()
 		resp = messages.SSH_MSG_NEWKEYS()
 		self.message_handler.send(resp)
 
 
 	def handle_SSH_MSG_NEWKEYS(self, msg):
-		# Start encrypting all packets and checking integrity
-		self.message_handler.enable_encryption()
-		self.message_handler.enable_integrity()
+		# Enable all our set algorithms in the message handler
+		self.algorithm_handler.enable_algorithms(self.message_handler)
 
 
 	def handle_SSH_MSG_SERVICE_REQUEST(self, msg):
