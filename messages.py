@@ -39,7 +39,11 @@ class SSH_MSG:
 		if msg_class is None:
 			raise Exception(f"Unhandled message number {message_number}")
 
-		return msg_class.from_reader(r)
+		msg = msg_class.from_reader(r)
+		# DEBUG: Remove this once not needed anymore
+		if r.data[r.head:] != b"":
+			print(f"WARNING: EXTRA DATA LEFT FROM {msg}: {r.data[r.head:]}")
+		return msg
 
 	@classmethod
 	def from_reader(cls, r):
@@ -252,43 +256,47 @@ class SSH_MSG_NEWKEYS(SSH_MSG):
 
 # 30 to 49: Key exchange method specific (numbers can be reused for
 #  different authentication methods)
-class SSH_MSG_KEXDH_INIT(SSH_MSG):
+class SSH_MSG_KEX_ECDH_INIT(SSH_MSG):
 	message_number = 30
 
-	def __init__(self, e):
-		self.e = e
+	def __init__(self, Q_C):
+		self.Q_C = Q_C
 
 	@classmethod
 	def from_reader(cls, r):
-		e = r.read_mpint()
-		return cls(e)
+		# TODO: Handle Q_C as an octet string
+		Q_C = r.read_mpint()
+		return cls(Q_C)
 
 	def payload(self):
 		w = DataWriter()
 		w.write_uint8(self.message_number)
-		w.write_mpint(e)
+		# TODO: Handle Q_C as an octet string
+		w.write_mpint(self.Q_C)
 		return w.data
 
-class SSH_MSG_KEXDH_REPLY(SSH_MSG):
+class SSH_MSG_KEX_ECDH_REPLY(SSH_MSG):
 	message_number = 31
 
-	def __init__(self, K_S, f, H_sig):
+	def __init__(self, K_S, Q_S, H_sig):
 		self.K_S = K_S
-		self.f = f
+		self.Q_S = Q_S
 		self.H_sig = H_sig
 
 	@classmethod
 	def from_reader(cls, r):
 		K_S = r.read_string()
-		f = r.read_mpint()
+		# TODO: Handle Q_S as an octet string
+		Q_S = r.read_mpint()
 		H_sig = r.read_string()
-		return cls(K_S, f, H_sig)
+		return cls(K_S, Q_S, H_sig)
 
 	def payload(self):
 		w = DataWriter()
 		w.write_uint8(self.message_number)
 		w.write_string(self.K_S)
-		w.write_mpint(self.f)
+		# TODO: Handle Q_C as an octet string
+		w.write_mpint(self.Q_S)
 		w.write_string(self.H_sig)
 		return w.data
 

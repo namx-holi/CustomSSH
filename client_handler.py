@@ -23,16 +23,12 @@ class ClientHandler:
 		self.key = None # Our RSA key as an object
 		self.session_id = None # The first exchange hash H generated
 
-		# All values we need access to
+		# If the message reading loop is running. On client disconnect,
+		#  the loop method should end.
+		self.running = False
+
+		# Handles key exchange, algorithm setting up
 		self.algorithm_handler = AlgorithmHandler()
-		# self.V_C = None # Client's identification string
-		# self.V_S = None # Server's identification string
-		# self.I_C = None # The payload of the client's SSH_MSG_KEXINIT
-		# self.I_S = None # The payload of the server's SSH_MSG_KEXINIT
-		# self.K_S = None # The host key. Blob of self.key
-		# self.e = None # The exchange value sent by the client
-		# self.f = None # The exchange value sent by the server
-		# self.K = None # The shared secret
 
 		# All values used during and after user authentication
 		self.auth_required = Config.AUTH_REQUIRED
@@ -67,10 +63,6 @@ class ClientHandler:
 		# Save the exchange strings in algorithm handler
 		self.algorithm_handler.set_exchange_strings(V_C, V_S)
 
-		# If the message reading loop is running. On client disconnect,
-		#  the loop method should end.
-		self.running = False
-
 		# Start our message handler to send/receive messages
 		self.message_handler = MessageHandler(conn)
 
@@ -90,8 +82,8 @@ class ClientHandler:
 		if isinstance(msg, messages.SSH_MSG_KEXINIT):
 			self.handle_SSH_MSG_KEXINIT(msg)
 
-		elif isinstance(msg, messages.SSH_MSG_KEXDH_INIT):
-			self.handle_SSH_MSG_KEXDH_INIT(msg)
+		elif isinstance(msg, messages.SSH_MSG_KEX_ECDH_INIT):
+			self.handle_SSH_MSG_KEX_ECDH_INIT(msg)
 
 		elif isinstance(msg, messages.SSH_MSG_NEWKEYS):
 			self.handle_SSH_MSG_NEWKEYS(msg)
@@ -130,11 +122,11 @@ class ClientHandler:
 			return
 
 
-	def handle_SSH_MSG_KEXDH_INIT(self, msg):
-		# Handle the clients KEXDH_INIT to generate our shared secret
+	def handle_SSH_MSG_KEX_ECDH_INIT(self, msg):
+		# Handle the clients KEX_ECDH_INIT to generate our shared secret
 		#  and let the client know we've done so
-		server_kexdh_reply = self.algorithm_handler.handle_client_KEXDH_INIT(msg)
-		self.message_handler.send(server_kexdh_reply)
+		server_kex_ecdh_reply = self.algorithm_handler.handle_client_KEX_ECDH_INIT(msg)
+		self.message_handler.send(server_kex_ecdh_reply)
 
 		# Set up all the algorithms that are going to be used and let
 		#  the client know we are ready to start using them

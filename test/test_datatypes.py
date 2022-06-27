@@ -130,8 +130,6 @@ class TestReader(unittest.TestCase):
 
 		self.assertEqual(val, expected)
 
-	# TODO: Test for fixed length int
-
 	def test_reading_namelist_empty(self):
 		data = b"\x00\x00\x00\x00"
 		expected = []
@@ -287,8 +285,6 @@ class TestWriter(unittest.TestCase):
 		w.write_mpint(data)
 
 		self.assertEqual(w.data, expected)
-
-	# TODO: Test for fixed length int
 
 	def test_writing_namelist_empty(self):
 		data = []

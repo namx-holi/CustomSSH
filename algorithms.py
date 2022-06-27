@@ -11,7 +11,7 @@ import zlib
 
 from config import Config
 from data_types import DataWriter
-from messages import SSH_MSG_KEXINIT, SSH_MSG_KEXDH_REPLY
+from messages import SSH_MSG_KEXINIT, SSH_MSG_KEX_ECDH_REPLY
 
 
 
@@ -60,9 +60,6 @@ class AlgorithmHandler:
 		self.I_C = None # The payload of the client's SSH_MSG_KEXINIT
 		self.I_S = None # The payload of the server's SSH_MSG_KEXINIT
 		self.K_S = None # The host key. Blob of self.key
-		self.e = None # The exchange value sent by the client
-		self.f = None # The exchange value sent by the server
-		self.K = None # The shared secret
 		self.H = None
 		self.HASH = None # Method used to TODO: WRITE THIS
 
@@ -161,18 +158,15 @@ class AlgorithmHandler:
 			raise NoMatchingAlgorithm()
 
 
-	def handle_client_KEXDH_INIT(self, client_kexdh_init):
-		# TODO: Handle KexAlgorithm properly
+	def handle_client_KEX_ECDH_INIT(self, client_kex_ecdh_init):
 		# TODO: Handle ServerHostKeyAlgorithm properly
 
-		# Store the client's exchange value
-		self.e = client_kexdh_init.e
+		# TODO: Verify received Q_C is valid.
+		...
 
-		# Generate our own key pair, and calculate the shared secret
-		# diffie-hellman-group14-sha1
-		self.y = int(binascii.hexlify(urandom(32)), base=16)
-		self.f = pow(Config.GENERATOR, self.y, Config.PRIME) # g^y % p
-		self.K = pow(self.e, self.y, Config.PRIME) # e^y % p
+		# Initialise the key exchange algorithm to generate our own
+		#  keys and calculate a shared key
+		self.kex_algorithm.initialise(client_kex_ecdh_init.Q_C)
 
 		# Retrieve our host key, and also save as a blob
 		# ssh-rsa
@@ -192,9 +186,10 @@ class AlgorithmHandler:
 		w.write_string(self.I_C)
 		w.write_string(self.I_S)
 		w.write_string(self.K_S)
-		w.write_mpint(self.e)
-		w.write_mpint(self.f)
-		w.write_mpint(self.K)
+		# TODO: Handle Q_C and Q_S as an octet string
+		w.write_mpint(self.kex_algorithm.Q_C)
+		w.write_mpint(self.kex_algorithm.Q_S)
+		w.write_mpint(self.kex_algorithm.K)
 		# diffie-hellman-group14-sha1
 		self.H = self.HASH(w.data).digest() # exchange hash
 
@@ -213,19 +208,19 @@ class AlgorithmHandler:
 		H_sig = w.data
 
 		# Create a key exchange reply
-		server_kexdh_reply = SSH_MSG_KEXDH_REPLY(
+		server_kex_ecdh_reply = SSH_MSG_KEX_ECDH_REPLY(
 			K_S=self.K_S,
-			f=self.f,
+			Q_S=self.kex_algorithm.Q_S,
 			H_sig=H_sig
 		)
-		return server_kexdh_reply
+		return server_kex_ecdh_reply
 
 
 	def setup_algorithms(self):
 		# K is stored as an int but it needs to be handled as an mpint
 		#  for the purpose of generating the keys
 		w = DataWriter()
-		w.write_mpint(self.K)
+		w.write_mpint(self.kex_algorithm.K)
 		K = w.data
 
 		# Method to reduce duplicate code to handle generating a key
@@ -319,12 +314,10 @@ class KexAlgorithm(BothWayAlgorithm):
 	def __init_subclass__(cls):
 		KexAlgorithm._algorithms[cls.__qualname__] = cls
 
-
 class ServerHostKeyAlgorithm(BothWayAlgorithm):
 	_algorithms = OrderedDict()
 	def __init_subclass__(cls):
 		ServerHostKeyAlgorithm._algorithms[cls.__qualname__] = cls
-
 
 class EncryptionAlgorithm(OneWayAlgorithm):
 	_algorithms = OrderedDict()
@@ -337,7 +330,6 @@ class EncryptionAlgorithm(OneWayAlgorithm):
 		if "encrypt" in dir(cls):
 			EncryptionAlgorithm._server_to_client[cls.__qualname__] = cls
 
-
 class MacAlgorithm(OneWayAlgorithm):
 	_algorithms = OrderedDict()
 	_client_to_server = OrderedDict()
@@ -348,7 +340,6 @@ class MacAlgorithm(OneWayAlgorithm):
 			MacAlgorithm._client_to_server[cls.__qualname__] = cls
 		if "generate" in dir(cls):
 			MacAlgorithm._server_to_client[cls.__qualname__] = cls
-
 
 class CompressionAlgorithm(OneWayAlgorithm):
 	_algorithms = OrderedDict()
@@ -369,6 +360,19 @@ class CompressionAlgorithm(OneWayAlgorithm):
 class DH_Group14_SHA1(KexAlgorithm):
 	__qualname__ = "diffie-hellman-group14-sha1"
 	enabled = True
+
+	generator = 2
+	prime = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
+
+	def initialise(self, Q_C):
+		# TODO: Handle Q_C as an octet string
+		# self.Q_C = int.from_bytes(Q_C, "big", signed=True)
+		self.Q_C = Q_C
+
+		# Generate our own key pair, and calculate the shared secret
+		self.y = int(binascii.hexlify(urandom(32)), base=16)
+		self.Q_S = pow(self.generator, self.y, self.prime) # g^y % p
+		self.K = pow(self.Q_C, self.y, self.prime) # e^y % p
 
 
 
@@ -391,9 +395,6 @@ class AES128_CBC(EncryptionAlgorithm):
 
 	iv_length = 16
 	key_length = 16
-	
-	def __init__(self):
-		self.cipher = None
 
 	def initialise(self, iv, key):
 		self.cipher = AES.new(key, AES.MODE_CBC, iv)
@@ -417,9 +418,6 @@ class HMAC_SHA1(MacAlgorithm):
 	key_length = 20
 	hash_length = 20
 
-	def __init__(self):
-		self.key = None
-
 	def initialise(self, key):
 		self.key = key
 
@@ -439,8 +437,8 @@ class HMAC_SHA1(MacAlgorithm):
 ##########################
 class NoCompression(CompressionAlgorithm):
 	__qualname__ = "none"
-	client_enabled = False
-	server_enabled = False
+	client_enabled = True
+	server_enabled = True
 
 	def initialise(self):
 		...
@@ -451,13 +449,16 @@ class NoCompression(CompressionAlgorithm):
 	def decompress(self, data):
 		return data
 
+
+# TODO: Fix an incorrect header check on decompress, and sometimes
+#  compression just doesn't work
 class LZ77(CompressionAlgorithm):
 	__qualname__ = "zlib"
-	client_enabled = True
-	server_enabled = True
+	client_enabled = False
+	server_enabled = False
 
 	def initialise(self):
-		self.compressobj = zlib.compressobj()
+		self.compressobj = zlib.compressobj(level=6)
 		self.decompressobj = zlib.decompressobj()
 
 	def compress(self, data):
