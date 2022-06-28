@@ -19,7 +19,9 @@ def print_terminal_environment(ch):
 
 class ClientHandler:
 
-	def __init__(self, conn):
+	def __init__(self, conn, auth_handler):
+		self.auth_handler = auth_handler
+
 		self.key = None # Our RSA key as an object
 		self.session_id = None # The first exchange hash H generated
 
@@ -159,125 +161,14 @@ class ClientHandler:
 
 
 	def handle_SSH_MSG_USERAUTH_REQUEST(self, msg):
-		# Send a banner message.
-		banner = messages.SSH_MSG_USERAUTH_BANNER(message=Config.USERAUTH_BANNER)
+		# Retrieve our banner and sent to user
+		banner = self.auth_handler.get_banner()
 		self.message_handler.send(banner)
 
-		user_name = msg.user_name
-		service_name = msg.service_name
-		method_name = msg.method_name
-
-		# SSH-USERAUTH, 5.
-
-		# TODO: The user_name and service_name MAY change. These MUST
-		#  be checked, and MUST flush any authentication states if
-		#  they change. If it is unable to flush, it MUST disconnect
-		#  if the user_name or service_name change.
-		if user_name != self.user_name or service_name != self.service_name:
-			self.successful_authentications.clear()
-		self.user_name = user_name
-		self.service_name = service_name
-
-		# TODO: If the requested service is not available, the server
-		#  MAY disconnect immediately or at any later time. Sending a
-		#  proper disconnect message is RECOMMENDED. In any case, if the
-		#  service does not exist, authentication MUST NOT be accepted.
-		if service_name not in self.available_service_names:
-			error_msg = f"Service '{service_name}' is not available."
-			print(f" [*] {error_msg}")
-			resp = messages.SSH_MSG_DISCONNECT.SERVICE_NOT_AVAILABLE(error_msg)
-			self.message_handler.send(resp)
-			self.running = False
-			return
-
-		# TODO: If the requested user name does not exist, the server
-		#  MAY disconnect, or MAY send a bogus list of acceptable
-		#  authentication method name values, but never accept any.
-		#  This makes it possible for the server to avoid disclosing
-		#  information on which accounts exist. In any case, if the
-		#  user name does not exist, the authentication request MUST
-		#  NOT be accepted.
-		if user_name not in self.available_user_names:
-			error_msg = f"Username '{user_name}' is not available."
-			print(f" [*] {error_msg}")
-			resp = messages.SSH_MSG_DISCONNECT.ILLEGAL_USER_NAME(error_msg)
-			self.message_handler.send(resp)
-			self.running = False
-			return
-
-		# Other available authentications that can be used to log in
-		remaining_auths = list(self.available_authentications.difference(self.successful_authentications))
-
-		# SSH-USERAUTH, 7.
-		if method_name == "publickey":
-			# TODO: Write this
-			...
-			# msg.authenticating
-			# msg.algorithm_name
-			# msg.key_blob
-			# msg.public_key
-			# msg.signature
-			raise Exception("TODO PUBLIC KEY")
-
-		# SSH-USERAUTH, 8.
-		elif method_name == "password":
-			changing_password = msg.changing_password
-			password = msg.password
-			
-			# Wrong password
-			if password != Config.PASSWORD:
-				resp = messages.SSH_MSG_USERAUTH_FAILURE(
-					available_authentications=remaining_auths,
-					partial_success=False)
-				self.message_handler.send(resp)
-				return
-
-			# Setting a new password
-			if changing_password:
-				# TODO: Handle this for real? Do we want to allow users
-				#  to do this in the first place?
-				# TODO: Send a message if the new password is invalid?
-				new_password = msg.new_password
-
-			# Successful login!
-			resp = messages.SSH_MSG_USERAUTH_SUCCESS()
-			self.message_handler.send(resp)
-
-		# SSH-USERAUTH, 9.
-		elif method_name == "hostbased":
-			# TODO: Write this
-			...
-			# msg.algorithm_name
-			# msg.certificates
-			# msg.host_name
-			# msg.client_user_name
-			# msg.signature
-			raise Exception("TODO PUBLIC KEY")
-
-		# SSH-USERAUTH, 5.2.
-		elif method_name == "none":
-			# MUST always reject, unless the client is to be granted
-			#  access without any authentication, in which case, the
-			#  server MUST accept this request. The main purpose of
-			#  sending this request is to get the list of supported
-			#  methods from the server.
-			if self.auth_required:
-				self.successful_authentications.add(method_name)
-				resp = messages.SSH_MSG_USERAUTH_FAILURE(
-					available_authentications=remaining_auths,
-					partial_success=True)
-				self.message_handler.send(resp)
-			else:
-				self.is_authenticated = True
-				resp = messages.SSH_MSG_USERAUTH_SUCCESS()
-				self.message_handler.send(resp)
-
-		# Unhandled authentication method
-		else:
-			resp = messages.SSH_MSG_USERAUTH_FAILURE(
-				available_authentications=remaining_auths,
-				partial_success=False)
-			self.message_handler.send(resp)
+		# Handle the request
+		resp = self.auth_handler.handle_USERAUTH_REQUEST(msg)
+		self.message_handler.send(resp)
+		return
 
 
 	# TODO: For channel requests, check if authenticated first

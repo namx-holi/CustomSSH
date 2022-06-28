@@ -5,6 +5,7 @@ the whole server beforehand
 """
 import socket
 from client_handler import ClientHandler
+from authentication import AuthenticationHandler
 
 
 def main():
@@ -13,12 +14,14 @@ def main():
 	s.bind(("", 2222))
 	s.listen(1)
 
+	# Set up a handler for authentication
+	auth_handler = AuthenticationHandler()
+
 	# Wait for a connection
 	print("Running...")
 	while True:
 		conn, addr = s.accept()
-
-		c = ClientHandler(conn)
+		c = ClientHandler(conn, auth_handler)
 		c.loop()
 		print("Exited gracefully")
 		print("\n"*4)
