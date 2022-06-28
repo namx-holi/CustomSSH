@@ -25,11 +25,10 @@ class NoMatchingAlgorithm(Exception):
 #  Client's algorithm list is preferenced.
 def _find_match(cls, client_algos, server_algos):
 	algo_name = next((
-		algo_name for algo_name in set(client_algos)
+		algo_name for algo_name in client_algos
 		if algo_name in server_algos), None)
 	if algo_name is None:
 		return None
-
 	return cls.get_algorithm(algo_name)()
 
 
@@ -374,7 +373,6 @@ class DH_Group14_SHA1(KexAlgorithm):
 
 		# Generate our random number y (0 < y < q = 2^order)
 		self.y = random.randrange(1, 2**self.order)
-		# self.y = int(binascii.hexlify(urandom(self.order//16)), base=16)
 
 		# Calculate our public key and the shared secret
 		self.Q_S = pow(self.generator, self.y, self.prime) # g^y % p
@@ -385,7 +383,7 @@ class DH_Group14_SHA1(KexAlgorithm):
 
 class DH_Group16_SHA512(KexAlgorithm):
 	__qualname__ = "diffie-hellman-group16-sha512"
-	# enabled = True
+	enabled = True
 
 	generator = 2
 	prime = int.from_bytes(bytes.fromhex("""
