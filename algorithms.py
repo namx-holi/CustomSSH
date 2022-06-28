@@ -587,8 +587,8 @@ class NoCompression(CompressionAlgorithm):
 #  compression just doesn't work
 class LZ77(CompressionAlgorithm):
 	__qualname__ = "zlib"
-	client_enabled = False
-	server_enabled = False
+	client_enabled = True
+	server_enabled = True
 
 	def initialise(self):
 		self.compressobj = zlib.compressobj(level=6)
