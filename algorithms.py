@@ -583,8 +583,6 @@ class NoCompression(CompressionAlgorithm):
 		return data
 
 
-# TODO: Fix an incorrect header check on decompress, and sometimes
-#  compression just doesn't work
 class LZ77(CompressionAlgorithm):
 	__qualname__ = "zlib"
 	client_enabled = True
