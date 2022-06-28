@@ -54,6 +54,7 @@ ssh -vv -p 2222 user@127.0.0.1 -oKexAlgorithms=diffie-hellman-group14-sha1 -oCip
 
 ## TODO
 - Add rfc5656 to docs
+- Add https://datatracker.ietf.org/doc/html/rfc4344 to docs
 - Implement https://www.rfc-editor.org/rfc/rfc9142.html
 - Add more key exchange methods https://tools.ietf.org/id/draft-ietf-curdle-ssh-kex-sha2-09.html#rfc.section.3.5
 - Read https://datatracker.ietf.org/doc/html/rfc4253

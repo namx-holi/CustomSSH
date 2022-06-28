@@ -1,5 +1,4 @@
 
-import math
 import struct
 from os import urandom
 
@@ -43,10 +42,6 @@ class MessageHandler:
 		self._client_sequence_number = 0
 		self._server_sequence_number = 0
 
-		# Unencrypted traffic uses a block size of 8
-		# self.client_block_size = 8 
-		# self.server_block_size = 8
-
 		# Algorithms being used. If None, they are ignored
 		self.encryption_algo_c_to_s = None
 		self.encryption_algo_s_to_c = None
@@ -55,42 +50,16 @@ class MessageHandler:
 		self.compression_algo_c_to_s = None
 		self.compression_algo_s_to_c = None
 
-		# # Encryption and integrity keys expected lengths in bytes
-		# self.initial_iv_client_len     = 16 # aes128-cbc
-		# self.initial_iv_server_len     = 16 # aes128-cbc
-		# self.encryption_key_client_len = 16 # aes128-cbc
-		# self.encryption_key_server_len = 16 # aes128-cbc
-		# self.integrity_key_client_len  = 20 # hmac-sha1
-		# self.integrity_key_server_len  = 20 # hmac-sha1
-
-		# # Sizes of MACs
-		# self.integrity_hash_client_len = 20 # hmac-sha1
-		# self.integrity_hash_server_len = 20 # hmac-sha1
-
-		# # Encryption and integrity keys
-		# self.initial_iv_client     = None
-		# self.initial_iv_server     = None
-		# self.encryption_key_client = None
-		# self.encryption_key_server = None
-		# self.integrity_key_client  = None
-		# self.integrity_key_server  = None
-
-		# # Instances of ciphers are stored after initialised
-		# self.encryption_cipher_client = None
-		# self.encryption_cipher_server = None
-
-		# self.encryption_enabled = False
-		# self.mac_enabled = False
-
-
 	# Wrappers for algorithms
 	@property
 	def client_block_size(self):
+		# Unencrypted traffic uses a block size of 8
 		if self.encryption_algo_c_to_s is None:
 			return 8
 		return self.encryption_algo_c_to_s.iv_length
 	@property
 	def server_block_size(self):
+		# Unencrypted traffic uses a block size of 8
 		if self.encryption_algo_s_to_c is None:
 			return 8
 		return self.encryption_algo_s_to_c.iv_length
@@ -194,20 +163,18 @@ class MessageHandler:
 
 
 	def _calculate_padding_length(self, data):
-		# The padding should bring the compressed payload + 5 to a
-		#  multiple of the block size (+1 for the padding length bytem
-		#  and +4 for the uint32 packet_length)
+		# The padding should bring the data + 5 to a multiple of the
+		#  block size (+1 for the padding length byte, and +4 for the
+		#  packet_length uint32).
 		unpadded_length = len(data) + 1 + 4
-		desired_length = math.ceil(unpadded_length / self.server_block_size) * self.server_block_size
-		padding_length = desired_length - unpadded_length
+		padding_length = self.server_block_size - (unpadded_length % self.server_block_size)
 
-		# If the total packet length would be smaller than 16, we need
-		#  to increase the packet size via more padding!
-		if desired_length < 16:
-			nb_blocks_to_pad = (16 - desired_length) // self.server_block_size
-			padding_length += nb_blocks_to_pad * self.server_block_size
+		# Minimum packet size is 16, so add padding if we need to to
+		#  meet this requirement
+		if unpadded_length + padding_length < 16:
+			padding_length += self.server_block_size
 
-		# Minimum size of padding is 4, so if otherwise, we need to also
+		# Minimum size of padding is 4, so if otherwise, we also need to
 		#  pad more
 		if padding_length < 4:
 			padding_length += self.server_block_size
