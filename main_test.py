@@ -3,6 +3,11 @@
 This file is used to work on client handling without having to write
 the whole server beforehand
 """
+
+# Turn terminal into FONV terminal
+import misc.fonv
+
+
 import socket
 from client_handler import ClientHandler
 from authentication import AuthenticationHandler
