@@ -168,7 +168,6 @@ class ClientHandler:
 		# Handle the request
 		resp = self.auth_handler.handle_USERAUTH_REQUEST(msg)
 		self.message_handler.send(resp)
-		return
 
 
 	# TODO: For channel requests, check if authenticated first
