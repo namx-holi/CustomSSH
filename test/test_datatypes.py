@@ -250,6 +250,15 @@ class TestWriter(unittest.TestCase):
 
 		self.assertEqual(w.data, expected)
 
+	def test_writing_string_bytes(self):
+		data = b"testing"
+		expected = b"\x00\x00\x00\x07testing"
+
+		w = DataWriter()
+		w.write_string(data)
+
+		self.assertEqual(w.data, expected)
+
 	def test_writing_mpint_zero(self):
 		data = 0
 		expected = b"\x00\x00\x00\x00"

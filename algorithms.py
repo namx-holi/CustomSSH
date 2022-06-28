@@ -5,6 +5,7 @@ from collections import OrderedDict
 from Crypto.Cipher import AES
 from Crypto.Hash import HMAC, SHA1
 from Crypto.PublicKey import RSA
+from Crypto.Random import random
 from Crypto.Signature import pkcs1_15
 from os import urandom
 import zlib
@@ -59,9 +60,7 @@ class AlgorithmHandler:
 		self.V_S = None # Server's identification string
 		self.I_C = None # The payload of the client's SSH_MSG_KEXINIT
 		self.I_S = None # The payload of the server's SSH_MSG_KEXINIT
-		self.K_S = None # The host key. Blob of self.key
 		self.H = None
-		self.HASH = None # Method used to TODO: WRITE THIS
 
 
 	def set_exchange_strings(self, V_C, V_S):
@@ -168,30 +167,20 @@ class AlgorithmHandler:
 		#  keys and calculate a shared key
 		self.kex_algorithm.initialise(client_kex_ecdh_init.Q_C)
 
-		# Retrieve our host key, and also save as a blob
-		# ssh-rsa
-		with open(Config.RSA_KEY) as f:
-			self.host_key = RSA.import_key(f.read())
-		w = DataWriter() # SSH-TRANS 6.6.
-		w.write_string("ssh-rsa")
-		w.write_mpint(self.host_key.e)
-		w.write_mpint(self.host_key.n)
-		self.K_S = w.data
+		# Initialise our host key and save the blob
+		self.server_host_key_algorithm.initialise()
 
 		# Generate our exchange hash H
-		self.HASH = lambda x: SHA1.new(x) # diffie-hellman-group14-sha1
 		w = DataWriter() # SSH-TRANS 8.
 		w.write_string(self.V_C)
 		w.write_string(self.V_S)
 		w.write_string(self.I_C)
 		w.write_string(self.I_S)
-		w.write_string(self.K_S)
-		# TODO: Handle Q_C and Q_S as an octet string
-		w.write_mpint(self.kex_algorithm.Q_C)
-		w.write_mpint(self.kex_algorithm.Q_S)
+		w.write_string(self.server_host_key_algorithm.K_S)
+		w.write_mpint(self.kex_algorithm.Q_C) # TODO: Handle as octet string
+		w.write_mpint(self.kex_algorithm.Q_S) # TODO: Handle as octet string
 		w.write_mpint(self.kex_algorithm.K)
-		# diffie-hellman-group14-sha1
-		self.H = self.HASH(w.data).digest() # exchange hash
+		self.H = self.kex_algorithm.HASH(w.data) # exchange hash
 
 		# The exchange hash H from the first key exchange is used as the
 		#  session identifier
@@ -199,17 +188,11 @@ class AlgorithmHandler:
 			self.session_id = self.H
 
 		# Calculate the signature of H
-		# SSH_RSA (pkcs1_15), diffie-hellman-group14-sha1
-		sig = pkcs1_15.new(self.host_key).sign(SHA1.new(self.H))
-		w = DataWriter() # SSH-TRANS 6.6.
-		w.write_string("ssh-rsa")
-		w.write_uint32(len(sig))
-		w.write_byte(sig)
-		H_sig = w.data
+		H_sig = self.server_host_key_algorithm.sign(self.H)
 
 		# Create a key exchange reply
 		server_kex_ecdh_reply = SSH_MSG_KEX_ECDH_REPLY(
-			K_S=self.K_S,
+			K_S=self.server_host_key_algorithm.K_S,
 			Q_S=self.kex_algorithm.Q_S,
 			H_sig=H_sig
 		)
@@ -223,18 +206,22 @@ class AlgorithmHandler:
 		w.write_mpint(self.kex_algorithm.K)
 		K = w.data
 
+		# Alias the HASH method from key exchange method to make code
+		#  a bit shorter
+		HASH = self.kex_algorithm.HASH
+
 		# Method to reduce duplicate code to handle generating a key
 		#  with the correct length
 		def _generate_key(X, length): # SSH-TRANS 7.2.
 			# HASH(K || H || session_id)
-			key = self.HASH(K + self.H + X + self.session_id).digest()
+			key = HASH(K + self.H + X + self.session_id)
 			# If the key length needed is longer than the output of
 			#  HASH, the key is extended by computing HASH of the concat
 			#  of K and H and the entire key so far, and appending the
 			#  resulting bytes to the key. This process is repeated
 			#  until enough key material is available.
 			while len(key) < length:
-				key += HASH(K + self.H + key).digest()
+				key += HASH(K + self.H + key)
 
 			# Key data MUST be taken from the beginning of the hash output.
 			return key[:length]
@@ -363,16 +350,23 @@ class DH_Group14_SHA1(KexAlgorithm):
 
 	generator = 2
 	prime = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
+	order = 2048
 
 	def initialise(self, Q_C):
 		# TODO: Handle Q_C as an octet string
 		# self.Q_C = int.from_bytes(Q_C, "big", signed=True)
 		self.Q_C = Q_C
 
-		# Generate our own key pair, and calculate the shared secret
-		self.y = int(binascii.hexlify(urandom(32)), base=16)
+		# Generate our random number y (0 < y < q = 2^order)
+		self.y = random.randrange(1, 2**self.order)
+		# self.y = int(binascii.hexlify(urandom(self.order//16)), base=16)
+
+		# Calculate our public key and the shared secret
 		self.Q_S = pow(self.generator, self.y, self.prime) # g^y % p
 		self.K = pow(self.Q_C, self.y, self.prime) # e^y % p
+
+	def HASH(self, data):
+		return SHA1.new(data).digest()
 
 
 
@@ -382,6 +376,30 @@ class DH_Group14_SHA1(KexAlgorithm):
 class SSH_RSA(ServerHostKeyAlgorithm):
 	__qualname__ = "ssh-rsa"
 	enabled = True
+
+	def initialise(self):
+		filename = Config.HOST_KEYS["ssh-rsa"]
+		with open(filename, "r") as f:
+			self.key = RSA.import_key(f.read())
+
+		# Generate the key blob
+		w = DataWriter() # SSH-TRANS 6.6.
+		w.write_string("ssh-rsa")
+		w.write_mpint(self.key.e)
+		w.write_mpint(self.key.n)
+		self.K_S = w.data
+
+	def sign(self, data):
+		sig = pkcs1_15.new(self.key).sign(SHA1.new(data))
+
+		# TODO: What is meant by the following?
+		# The value for 'rsa_signature_blob' is encoded as a string
+		#  containing s (which is an integer, without lengths or
+		#  padding, unsigned, and in network byte order).
+		w = DataWriter() # SSH-TRANS 6.6.
+		w.write_string("ssh-rsa")
+		w.write_string(sig)
+		return w.data
 
 
 

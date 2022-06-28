@@ -7,7 +7,9 @@ class Config:
 	IDENTIFICATION_STRING = "SSH-2.0-CustomSSH_0.1.0 Custom SSH server"
 
 	# Our RSA private key file
-	RSA_KEY = "rsa_key.priv"
+	HOST_KEYS = {
+		"ssh-rsa": "rsa_key.priv"
+	}
 
 	# Successful password when logging in with such
 	AUTH_REQUIRED = False
