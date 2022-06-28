@@ -260,6 +260,7 @@ class BothWayAlgorithm:
 	Same algorithm used for client->server and server->client
 	"""
 	_algorithms = OrderedDict()
+	enabled = False
 	
 	@classmethod
 	def algorithms(cls):
@@ -279,6 +280,8 @@ class OneWayAlgorithm(BothWayAlgorithm):
 	_algorithms = OrderedDict()
 	_client_to_server = OrderedDict()
 	_server_to_client = OrderedDict()
+	client_enabled = False
+	server_enabled = False
 
 	@classmethod
 	def client_to_server_algorithms(cls):
@@ -362,6 +365,7 @@ class DH_Group14_SHA1(KexAlgorithm):
 		DE2BCBF6 95581718 3995497C EA956AE5 15D22618 98FA0510
 		15728E5A 8AACAA68 FFFFFFFF FFFFFFFF
 	"""), "big")
+	order = 2048
 
 	def initialise(self, Q_C):
 		# TODO: Handle Q_C as an octet string
@@ -381,7 +385,7 @@ class DH_Group14_SHA1(KexAlgorithm):
 
 class DH_Group16_SHA512(KexAlgorithm):
 	__qualname__ = "diffie-hellman-group16-sha512"
-	enabled = True
+	# enabled = True
 
 	generator = 2
 	prime = int.from_bytes(bytes.fromhex("""
@@ -472,6 +476,63 @@ class AES128_CBC(EncryptionAlgorithm):
 
 	def initialise(self, iv, key):
 		self.cipher = AES.new(key, AES.MODE_CBC, iv)
+
+	def encrypt(self, data):
+		return self.cipher.encrypt(data)
+
+	def decrypt(self, data):
+		return self.cipher.decrypt(data)
+
+
+class AES128_CTR(EncryptionAlgorithm):
+	__qualname__ = "aes128-ctr"
+	client_enabled = True
+	server_enabled = True
+
+	iv_length = 16
+	key_length = 16
+
+	def initialise(self, iv, key):
+		initial_value = int.from_bytes(iv, "big", signed=False) # RFC4344, 4.
+		self.cipher = AES.new(key, AES.MODE_CTR, nonce=b"", initial_value=initial_value)
+
+	def encrypt(self, data):
+		return self.cipher.encrypt(data)
+
+	def decrypt(self, data):
+		return self.cipher.decrypt(data)
+
+
+class AES192_CTR(EncryptionAlgorithm):
+	__qualname__ = "aes192-ctr"
+	client_enabled = True
+	server_enabled = True
+
+	iv_length = 16
+	key_length = 24
+
+	def initialise(self, iv, key):
+		initial_value = int.from_bytes(iv, "big", signed=False) # RFC4344, 4.
+		self.cipher = AES.new(key, AES.MODE_CTR, nonce=b"", initial_value=initial_value)
+
+	def encrypt(self, data):
+		return self.cipher.encrypt(data)
+
+	def decrypt(self, data):
+		return self.cipher.decrypt(data)
+
+
+class AES256_CTR(EncryptionAlgorithm):
+	__qualname__ = "aes256-ctr"
+	client_enabled = True
+	server_enabled = True
+
+	iv_length = 16
+	key_length = 32
+
+	def initialise(self, iv, key):
+		initial_value = int.from_bytes(iv, "big", signed=False) # RFC4344, 4.
+		self.cipher = AES.new(key, AES.MODE_CTR, nonce=b"", initial_value=initial_value)
 
 	def encrypt(self, data):
 		return self.cipher.encrypt(data)
