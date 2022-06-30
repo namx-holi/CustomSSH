@@ -97,8 +97,8 @@ class SSH_MSG_DISCONNECT(SSH_MSG):
 	@classmethod
 	def from_reader(cls, r):
 		reason_code = r.read_uint32()
-		description = reader.read_string()
-		language_tag = reader.read_string()
+		description = r.read_string()
+		language_tag = r.read_string()
 		return cls(reason_code, description, language_tag)
 
 	def payload(self):
@@ -732,17 +732,62 @@ class SSH_MSG_CHANNEL_OPEN_FAILURE(SSH_MSG):
 # class SSH_MSG_CHANNEL_WINDOW_ADJUST(SSH_MSG):
 # 	message_number = 93
 
-# class SSH_MSG_CHANNEL_DATA(SSH_MSG):
-# 	message_number = 94
+class SSH_MSG_CHANNEL_DATA(SSH_MSG):
+	message_number = 94
+
+	def __init__(self, recipient_channel, data):
+		self.recipient_channel = recipient_channel
+		self.data = data
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		data = r.read_string(blob=True)
+		return cls(recipient_channel, data)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		w.write_string(self.data)
+		return w.data
 
 # class SSH_MSG_CHANNEL_EXTENDED_DATA(SSH_MSG):
 # 	message_number = 95
 
-# class SSH_MSG_CHANNEL_EOF(SSH_MSG):
-# 	message_number = 96
+class SSH_MSG_CHANNEL_EOF(SSH_MSG):
+	message_number = 96
 
-# class SSH_MSG_CHANNEL_CLOSE(SSH_MSG):
-# 	message_number = 97
+	def __init__(self, recipient_channel):
+		self.recipient_channel = recipient_channel
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		return cls(recipient_channel)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		return w.data
+
+class SSH_MSG_CHANNEL_CLOSE(SSH_MSG):
+	message_number = 97
+
+	def __init__(self, recipient_channel):
+		self.recipient_channel = recipient_channel
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		return cls(recipient_channel)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		return w.data
 
 class SSH_MSG_CHANNEL_REQUEST(SSH_MSG):
 	message_number = 98

@@ -132,6 +132,10 @@ class MessageHandler:
 
 
 	def send(self, msg):
+		# If no message, end here
+		if msg is None:
+			return
+
 		print(f" -> Sending {msg.__class__.__name__}")
 
 		# Handle compression

@@ -23,8 +23,6 @@ def main():
 		conn, addr = s.accept()
 		c = ClientHandler(conn, auth_handler)
 		c.loop()
-		print("Exited gracefully")
-		print("\n"*4)
-		return
+		print(f" [*] Client {addr[0]}:{addr[1]} disconnected")
 
 main()
