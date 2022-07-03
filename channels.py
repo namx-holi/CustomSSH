@@ -1,8 +1,7 @@
 
-import queue
-import threading
 from itertools import count, filterfalse
 
+from apps import TestShell
 from data_types import DataReader
 from messages import (
 	SSH_MSG_CHANNEL_OPEN_CONFIRMATION,
@@ -49,8 +48,18 @@ class ChannelHandler:
 		return channel_id
 
 
-	# TODO: Method to delete channels once they're closed
-	...
+	def close_channel(self, channel_id):
+		channel = self.channels.get(channel_id)
+		channel.handle_CHANNEL_CLOSE()
+		del channel
+		del self.channels[channel_id]
+		print(f" [*] Channel {channel_id} closed.")
+
+
+	def close_all_channels(self):
+		channel_ids = list(self.channels.keys())
+		for channel_id in channel_ids:
+			self.close_channel(channel_id)
 
 
 	def handle_CHANNEL_OPEN(self, msg, client_running, message_handler):
@@ -140,7 +149,7 @@ class ChannelHandler:
 			return
 
 		# Pass the request on to the channel to pass to it's app
-		channel.data_in(msg.data)
+		channel.handle_CHANNEL_DATA(msg)
 
 
 	def handle_CHANNEL_CLOSE(self, msg):
@@ -150,16 +159,9 @@ class ChannelHandler:
 		if channel is None:
 			return
 
-		# Pass the request on to the channel to handle
-		channel.handle_CHANNEL_CLOSE()
-
-		# Get rid of references to the channel
-		del self.channels[msg.recipient_channel]
-
-		import gc
-		gc.collect()
-		print("Referrers are: ", gc.get_referrers(channel))
-		# TODO: Replace threading with asyncio ? Makes more sense
+		# Close that channel
+		self.close_channel(msg.recipient_channel)
+		
 
 
 # SSH-CONNECT 6.1
@@ -190,71 +192,13 @@ class SessionChannel:
 		#  or input/output config
 		self.config = PseudoTerminalConfig()
 
-		# Flag for if the app is running, and the queue used to push
-		#  data to the app running in a thread
-		self.app_has_been_started = False
-		self.app_running = threading.Event()
-		self.app_data_queue = queue.Queue()
+		# Our app, and a flag for whether an app has been started before
+		#  so we can prevent starting multiple apps on the same channel
 		self.app = None
+		self.app_has_been_started = False
 
 		# If we have sent our own CHANNEL_CLOSE already
-		self.client_channel_close_sent = False
-		self.server_channel_close_sent = False
-
-
-	def data_in(self, data):
-		# Sends data to the app thread via data queue
-		self.app_data_queue.put(data)
-
-
-	def data_out(self, data):
-		# Sends data to the client
-		msg = SSH_MSG_CHANNEL_DATA(self.client_channel_id, data)
-		self.message_handler.send(msg)
-
-
-	def start_shell(self):
-		# Start a thread that sends "Hi!" every couple seconds to the
-		#  client to demonstrate async sending
-		self.app_has_been_started = True
-		self.app = TestShell(self)
-		self.app.start()
-
-
-	def close_channel(self):
-		# If an app is running, terminate that
-		print("CHANNEL CLOSING ")
-		self.app_running.clear()
-		if self.app:
-			for thread in self.app.threads:
-				thread.join()
-
-
-	# Sends our own close channel
-	def send_close_channel(self):
-		# SSH-CONNECT 5.3.
-
-		# Send a channel close
-		msg = SSH_MSG_CHANNEL_CLOSE(self.client_channel_id)
-		self.message_handler.send(msg)
-		self.server_channel_close_sent = True
-
-		# If we have received AND sent a CHANNEL_CLOSE, terminate app
-		if self.client_channel_close_sent and self.server_channel_close_sent:
-			self.close_channel()
-
-
-	# Receives client's close channel
-	def handle_CHANNEL_CLOSE(self):
-		# SSH-CONNECT 5.3.
-		self.client_channel_close_sent = True
-
-		# Send our own close channel if not sent already. If already
-		#  sent, then we terminate app
-		if not self.server_channel_close_sent:
-			self.send_close_channel()
-		else:
-			self.close_channel()
+		self.sent_channel_close = False
 
 
 	def handle_CHANNEL_REQUEST(self, msg):
@@ -371,6 +315,58 @@ class SessionChannel:
 		# Unhandled request type
 		else:
 			return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
+
+
+	def start_shell(self):
+		# Start a thread that sends "Hi!" every couple seconds to the
+		#  client to demonstrate async sending
+		self.app_has_been_started = True
+		self.app = TestShell(self)
+		self.app.start()
+
+
+	# Passes CHANNEL_DATA down from client handler to app
+	def handle_CHANNEL_DATA(self, msg):
+		if self.app is not None:
+			self.app.handle_CHANNEL_DATA(msg)
+
+
+	# Passes CHANNEL_DATA up from app to client handler
+	# TODO: Have this method call something in parent rather than
+	#  directly use the message_handler
+	def send_CHANNEL_DATA(self, data):
+		msg = SSH_MSG_CHANNEL_DATA(self.client_channel_id, data)
+		self.message_handler.send(msg)
+
+
+	# Receives client's close channel
+	def handle_CHANNEL_CLOSE(self):
+		# Stop the app.
+		if self.app is not None:
+			self.app.stop()
+			self.app = None
+
+		# If we have not sent our own CHANNEL_CLOSE, then we must
+		#  respond with our own. Otherwise we have received a response
+		#  to our own CHANNEL_CLOSE and can do nothing.
+		if not self.sent_channel_close:
+			self.send_CHANNEL_CLOSE()
+
+
+	# Sends server's close channel
+	# TODO: Have this method call something in parent rather than
+	#  directly use the message_handler
+	def send_CHANNEL_CLOSE(self):
+		# NOTE: We don't have to handle any actual channel closing here
+		#  as that can be handled either when we receive a response to
+		#  this msg, or when the client wishes to close of their own
+		#  accord. Also, this will likely be called from a thread which
+		#  could cause issues when a thread is requested to join from
+		#  within itself.
+		msg = SSH_MSG_CHANNEL_CLOSE(self.client_channel_id)
+		self.message_handler.send(msg)
+		self.sent_channel_close = True
+
 
 
 
@@ -490,86 +486,6 @@ class PseudoTerminalConfig:
 
 	def set_environment_variable(self, name, value):
 		self.environ[name] = value
-
-
-
-# A test shell application
-import time
-class TestShell:
-	"""
-	Test shell. Sends the letter A to the client every 2 seconds. If it
-	a letter from the user, starts sending that letter instead.
-	"""
-
-	def __init__(self, session):
-		self.session = session
-		self.running = session.app_running
-		self.data_queue = session.app_data_queue
-		self.config = session.config
-
-		# Threads used by this app
-		self.threads = []
-
-		# Data used by this app
-		self.word = b""
-
-
-	def start(self):
-		self.running.set()
-
-		print_loop_t = threading.Thread(target=self.print_loop)
-		input_loop_t = threading.Thread(target=self.input_loop)
-		
-		# print_loop_t.daemon = True
-		# input_loop_t.daemon = True
-
-		print_loop_t.start()
-		input_loop_t.start()
-
-		self.threads = [print_loop_t, input_loop_t]
-
-
-	def stop(self):
-		print("STOPPING APP")
-		self.running.clear()
-		self.session.send_close_channel()
-
-
-	def input_loop(self):
-		input_buffer = b""
-
-		while self.running.isSet():
-			# Read next pending user input
-			try:
-				print("Trying to read from queue")
-				input_buffer += self.data_queue.get(timeout=1)
-			except queue.Empty:
-				continue
-
-			# If we have received any ^C, we must exit
-			if bytes([self.config.eof]) in input_buffer:
-				self.stop()
-				break
-
-			# If we received a new line, handle the buffer and reset the
-			#  buffer
-			if b"\r" in input_buffer:
-				self.word, _, input_buffer = input_buffer.partition(b"\n")
-				self.word += b"\r\n"
-
-		print("End of input thread")
-
-
-	def print_loop(self):
-		# Let user know what they can do
-		self.session.data_out("Type something and press enter. This will be echoed every second.\r\n")
-		self.session.data_out("CTRL+D will exit.\r\n")
-
-		while self.running.isSet():
-			self.session.data_out(self.word)
-			time.sleep(1)
-
-		print("End of print thread")
 
 
 

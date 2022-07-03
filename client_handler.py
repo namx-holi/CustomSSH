@@ -216,4 +216,4 @@ class ClientHandler:
 		self.running.clear()
 
 		# Also close any currently running channels
-		... # TODO
+		self.channel_handler.close_all_channels()
