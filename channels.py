@@ -227,7 +227,12 @@ class SessionChannel:
 			return SSH_MSG_CHANNEL_SUCCESS(self.client_channel_id)
 
 		# SSH-CONNECT 6.3.1.
-		elif request_type == "x11-req":
+		elif request_type == "x11-req": # Unhandled
+			single_connection = msg.single_connection
+			auth_protocol = msg.auth_protocol
+			auth_cookie = msg.auth_cookie
+			screen_number = msg.screen_number
+
 			# This type of session cannot handle x11 requests
 			return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
 
@@ -249,17 +254,20 @@ class SessionChannel:
 
 		# SSH-CONNECT 6.5.
 		elif request_type == "exec":
+			command = msg.command
+
 			# This message will request that the server start the
 			#  execution of the given command. The 'command' string may
 			#  contain a path. Normal precautions MUST be taken to
 			#  prevent the execution of unauthorized commands.
 			
 			# We don't handle this currently
-			print(" [!] Client requested exec requet_type")
+			print(f" [!] Client requested exec requet_type. Command={command}")
 			return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
 
 		# SSH-CONNECT 6.5.
-		elif request_type == "subsystem":
+		elif request_type == "subsystem": # Unhandled
+			subsystem_name = msg.subsystem_name
 			# This last form executes a predefined subsystem. It is
 			#  expected that these will include a general file transfer
 			#  mechanism, and possibly other features. Implementations
@@ -272,8 +280,7 @@ class SessionChannel:
 			#  the shell may be filtered out either at the server or at
 			#  the client.
 
-			# We don't handle this currently
-			print(" [!] Client requested subsystem request_type")
+			print(f" [!] Client requested 'subsystem:' Sybsystem name={subsystem_name}")
 			return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
 
 		# SSH-CONNECT 6.7.

@@ -660,19 +660,20 @@ class SSH_MSG_CHANNEL_OPEN(SSH_MSG):
 			return w.data
 
 		else:
-			print("POSSIBLE THERE IS MORE CHANNEL SPECIFIC DATA")
+			print("POSSIBLE THERE IS MORE CHANNEL SPECIFIC DATA IN SSH_MSG_CHANNEL_OPEN")
 			return w.data
 
 class SSH_MSG_CHANNEL_OPEN_CONFIRMATION(SSH_MSG):
 	message_number = 91
 
-	def __init__(self, recipient_channel, sender_channel, initial_window_size, maximum_packet_size, **data):
+	def __init__(self, recipient_channel, sender_channel, initial_window_size, maximum_packet_size):
 		self.recipient_channel = recipient_channel
 		self.sender_channel = sender_channel
 		self.initial_window_size = initial_window_size
 		self.maximum_packet_size = maximum_packet_size
-		for field_name in data.keys():
-			self.__setattr__(field_name, data[field_name])
+		# TODO: Handle channel specific data
+		# for field_name in data.keys():
+		# 	self.__setattr__(field_name, data[field_name])
 
 	@classmethod
 	def from_reader(cls, r):
@@ -680,8 +681,9 @@ class SSH_MSG_CHANNEL_OPEN_CONFIRMATION(SSH_MSG):
 		sender_channel = r.read_uint32()
 		initial_window_size = r.read_uint32()
 		maximum_packet_size = r.read_uint32()
-		data = {} # TODO!!!!!!!!
-		print(f"Remaining data is {r.data[r.head:]}")
+		# TODO: Handle channel specific data
+		# data = {} # TODO!!!!!!!!
+		# print(f"Remaining data is {r.data[r.head:]}")
 		return cls(recipient_channel, sender_channel, initial_window_size, maximum_packet_size)
 
 	def payload(self):
@@ -691,7 +693,8 @@ class SSH_MSG_CHANNEL_OPEN_CONFIRMATION(SSH_MSG):
 		w.write_uint32(self.sender_channel)
 		w.write_uint32(self.initial_window_size)
 		w.write_uint32(self.maximum_packet_size)
-		print("POSSIBLE THERE IS MORE CHANNEL SPECIFIC DATA")
+		# TODO: Handle channel specific data
+		# print("POSSIBLE THERE IS MORE CHANNEL SPECIFIC DATA IN SSH_MSG_CHANNEL_OPEN")
 		return w.data
 
 class SSH_MSG_CHANNEL_OPEN_FAILURE(SSH_MSG):
@@ -826,6 +829,7 @@ class SSH_MSG_CHANNEL_REQUEST(SSH_MSG):
 
 		# SSH-CONNECT 6.3.1.
 		elif request_type == "x11-req":
+			# TODO: Rename the variables to match names in SSH-CONNECT
 			single_connection = r.read_bool()
 			auth_protocol = r.read_string()
 			auth_cookie = r.read_string()
@@ -868,12 +872,12 @@ class SSH_MSG_CHANNEL_REQUEST(SSH_MSG):
 
 		# SSH-CONNECT 6.5.
 		elif request_type == "subsystem":
-			name = r.read_string()
+			subsystem_name = r.read_string()
 			return cls(
 				recipient_channel=recipient_channel,
 				request_type="subsystem",
 				want_reply=want_reply,
-				name=name)
+				subsystem_name=subsystem_name)
 
 		# SSH-CONNECT 6.7.
 		elif request_type == "window-change":
@@ -942,6 +946,7 @@ class SSH_MSG_CHANNEL_REQUEST(SSH_MSG):
 		w.write_uint32(self.recipient_channel)
 		w.write_string(self.request_type)
 		w.write_bool(self.want_reply)
+		# TODO: Handle request-type specific data
 		print("POSSIBLE THERE IS MORE TYPE SPECIFIC DATA")
 		return w.data
 

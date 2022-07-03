@@ -70,7 +70,6 @@ class TestShell(AppGeneric): # Requires a SessionChannel. TODO: Check for this.
 		# Start threads
 		for t in self.threads:
 			t.start()
-		print("TestShell started")
 
 
 	def stop(self):
