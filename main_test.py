@@ -22,7 +22,7 @@ def main():
 	while True:
 		conn, addr = s.accept()
 		c = ClientHandler(conn, auth_handler)
-		c.loop()
+		c.start()
 		print(f" [*] Client {addr[0]}:{addr[1]} disconnected")
 
 main()

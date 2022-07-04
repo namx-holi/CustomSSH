@@ -51,10 +51,13 @@ ssh -vv -p 2222 user@127.0.0.1 -oKexAlgorithms=diffie-hellman-group14-sha1 -oCip
 
 
 
+## Bugs
+- When a session is started using `ssh -T ...`, and then the user disconnects with `ctrl+D`, the unhandled SSH_MSG_CHANNEL_EOF for some reason causes the next session to fail on importing the RSA key. This may need to be fixed by hardcoding the host keys into config somewhere.
+
 
 ## TODO
 - Add https://datatracker.ietf.org/doc/html/rfc4344 to docs
-- Add https://datatracker.ieft.org/doc/html/rfc5656 to docs
+- Add https://datatracker.ietf.org/doc/html/rfc5656 to docs
 - Implement https://www.rfc-editor.org/rfc/rfc9142.html
 - Implement https://tools.ietf.org/id/draft-ietf-curdle-ssh-kex-sha2-09.html#rfc.section.3.4
 - Add more key exchange methods https://tools.ietf.org/id/draft-ietf-curdle-ssh-kex-sha2-09.html#rfc.section.3.5

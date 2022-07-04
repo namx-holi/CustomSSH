@@ -109,20 +109,62 @@ class SSH_MSG_DISCONNECT(SSH_MSG):
 		w.write_string(self.language_tag)
 		return w.data
 
-# class SSH_MSG_IGNORE(SSH_MSG):
-# 	message_number = 2
-# 	# TODO
-# 	...
+class SSH_MSG_IGNORE(SSH_MSG):
+	message_number = 2
+	
+	def __init__(self, data):
+		self.data = data
 
-# class SSH_MSG_UNIMPLEMENTED(SSH_MSG):
-# 	message_number = 3
-# 	# TODO
-# 	...
+	@classmethod
+	def from_reader(cls, r):
+		data = r.read_string(blob=True)
+		return cls(data)
 
-# class SSH_MSG_DEBUG(SSH_MSG):
-# 	message_number = 4
-# 	# TODO
-# 	...
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_string(self.data)
+		return w.data
+
+class SSH_MSG_UNIMPLEMENTED(SSH_MSG):
+	message_number = 3
+	
+	def __init__(self, packet_sequence_number):
+		self.packet_sequence_number = packet_sequence_number
+
+	@classmethod
+	def from_reader(cls, r):
+		packet_sequence_number = r.read_uint32()
+		return cls(packet_sequence_number)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.packet_sequence_number)
+		return w.data
+
+class SSH_MSG_DEBUG(SSH_MSG):
+	message_number = 4
+	
+	def __init__(self, always_display, message, language_tag=""):
+		self.always_display = always_display
+		self.message = message
+		self.language_tag = language_tag
+
+	@classmethod
+	def from_reader(cls, r):
+		always_display = r.read_bool()
+		message = r.read_string()
+		language_tag = r.read_string()
+		return cls(always_display, message, language_tag)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_bool(self.always_display)
+		w.write_string(self.message)
+		w.write_string(self.language_tag)
+		return w.data
 
 class SSH_MSG_SERVICE_REQUEST(SSH_MSG):
 	message_number = 5
@@ -505,7 +547,7 @@ class SSH_MSG_USERAUTH_SUCCESS(SSH_MSG):
 	message_number = 52
 
 	def __init__(self):
-		...
+		pass
 
 	@classmethod
 	def from_reader(cls):
@@ -542,16 +584,66 @@ class SSH_MSG_USERAUTH_BANNER(SSH_MSG):
 # ...
 
 
-# # 80 to 89: Connection protocol generic
-# class SSH_MSG_GLOBAL_REQUEST(SSH_MSG):
-# 	message_number = 80
-# class SSH_MSG_REQUEST_SUCCESS(SSH_MSG):
-# 	message_number = 81
-# class SSH_MSG_REQUEST_FAILURE(SSH_MSG):
-# 	message_number = 82
+# 80 to 89: Connection protocol generic
+class SSH_MSG_GLOBAL_REQUEST(SSH_MSG):
+	message_number = 80
+
+	def __init__(self, request_name, want_reply, **data):
+		self.request_name = request_name
+		self.want_reply = want_reply
+		for field_name in data.keys():
+			self.__setattr__(field_name, data[field_name])
+
+	@classmethod
+	def from_reader(cls, r):
+		request_name = r.read_string()
+		want_reply = r.read_bool()
+		print(f"!!!Remaining data in SSH_MSG_GLOBAL_REQUEST is {r.data[r.head:]}")
+		return cls(request_name, want_reply)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_string(self.request_name)
+		w.write_bool(self.want_reply)
+		print("POSSIBLE THERE IS MORE CHANNEL SPECIFIC DATA IN SSH_MSG_GLOBAL_REQUEST")
+		return w.data
+
+class SSH_MSG_REQUEST_SUCCESS(SSH_MSG):
+	message_number = 81
+
+	def __init__(self, **data):
+		for field_name in data.keys():
+			self.__setattr__(field_name, data[field_name])
+
+	@classmethod
+	def from_reader(cls, r):
+		print(f"!!!Remaining data in SSH_MSG_REQUEST_SUCCESS is {r.data[r.head:]}")
+		return cls()
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		print("POSSIBLE THERE IS MORE CHANNEL SPECIFIC DATA IN SSH_MSG_REQUEST_SUCCESS")
+		return w.data
+
+class SSH_MSG_REQUEST_FAILURE(SSH_MSG):
+	message_number = 82
+
+	def __init__(self):
+		pass
+
+	@classmethod
+	def from_reader(cls):
+		return cls()
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		return w.data
 
 
-# # 90 to 127: Channel related methods
+# 90 to 127: Channel related methods
 class SSH_MSG_CHANNEL_OPEN(SSH_MSG):
 	message_number = 90
 
@@ -732,8 +824,25 @@ class SSH_MSG_CHANNEL_OPEN_FAILURE(SSH_MSG):
 		w.write_string(self.language_tag)
 		return w.data
 
-# class SSH_MSG_CHANNEL_WINDOW_ADJUST(SSH_MSG):
-# 	message_number = 93
+class SSH_MSG_CHANNEL_WINDOW_ADJUST(SSH_MSG):
+	message_number = 93
+
+	def __init__(self, recipient_channel, bytes_to_add):
+		self.recipient_channel = recipient_channel
+		self.bytes_to_add = bytes_to_add
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		bytes_to_add = r.read_uint32()
+		return cls(recipient_channel, bytes_to_add)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		w.write_uint32(self.bytes_to_add)
+		return w.data
 
 class SSH_MSG_CHANNEL_DATA(SSH_MSG):
 	message_number = 94
@@ -755,8 +864,28 @@ class SSH_MSG_CHANNEL_DATA(SSH_MSG):
 		w.write_string(self.data)
 		return w.data
 
-# class SSH_MSG_CHANNEL_EXTENDED_DATA(SSH_MSG):
-# 	message_number = 95
+class SSH_MSG_CHANNEL_EXTENDED_DATA(SSH_MSG):
+	message_number = 95
+
+	def __init__(self, recipient_channel, data_type_code, data):
+		self.recipient_channel = recipient_channel
+		self.data_type_code = data_type_code
+		self.data = data
+
+	@classmethod
+	def from_reader(cls, r):
+		recipient_channel = r.read_uint32()
+		data_type_code = r.read_uint32()
+		data = r.read_string(blob=True)
+		return cls(recipient_channel, data)
+
+	def payload(self):
+		w = DataWriter()
+		w.write_uint8(self.message_number)
+		w.write_uint32(self.recipient_channel)
+		w.write_uint32(self.data_type_code)
+		w.write_string(self.data)
+		return w.data
 
 class SSH_MSG_CHANNEL_EOF(SSH_MSG):
 	message_number = 96
@@ -984,9 +1113,10 @@ class SSH_MSG_CHANNEL_FAILURE(SSH_MSG):
 		w.write_uint32(self.recipient_channel)
 		return w.data
 
-# # 128 to 191: Reserved
-# ...
+
+# 128 to 191: Reserved
+...
 
 
-# # 192 to 255: Local extensions. Private use.
-# ...
+# 192 to 255: Local extensions. Private use.
+...

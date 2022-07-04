@@ -40,9 +40,49 @@ class TestShell(AppGeneric): # Requires a SessionChannel. TODO: Check for this.
 	def __init__(self, session):
 		self.session = session
 		
-		# Retrieve some things we need from the current session
-		self.config = session.config
-		...
+		# Read the client's [CTRL+D] character from config if available
+		if session.config.eof not in [None, 255]: # Set to something valid
+			self.eof_char = bytes([session.config.eof])
+		elif session.config.eof == 255: # Explicitly set as nothing
+			self.eof_char = None
+		else: # Default value
+			self.eof_char = None
+
+		# Read the client's [Backspace] character from config if available
+		if session.config.erase not in [None, 255]: # Set to something valid
+			self.erase_char = bytes([session.config.erase])
+		elif session.config.erase == 255: # Explicitly set as nothing
+			self.erase_char = None
+		else: # Default value
+			self.erase_char = None
+
+		# Read the client's [CTRL+C] character from config if available
+		if session.config.intr not in [None, 255]: # Set to something valid
+			self.intr_char = bytes([session.config.intr])
+		elif session.config.intr == 255: # Explicitly set as nothing
+			self.intr_char = None
+		else: # Default value
+			self.intr_char = None
+
+		# Handling NL and CR
+		if session.config.icrnl:
+			self.in_NL = b"\r"
+		else:
+			self.in_NL = b"\n"
+
+		if session.config.onlcr:
+			self.out_NL = b"\r\n"
+		else:
+			self.out_NL = b"\n"
+
+
+		print("Input: NL->CR =", session.config.inlcr)
+		print("Input: Ignore CR =", session.config.igncr)
+		print("Input: CR->NL =", session.config.icrnl)
+		print("Output: NL->CRNL =", session.config.onlcr)
+		print("Output: Translate CR->NL =", session.config.ocrnl)
+		print("Output: Translate NL->CRNL =", session.config.onocr)
+		print("Output: NL performs CR =", session.config.onlret)
 
 		# Data used by this app
 		self.running = threading.Event()
@@ -96,16 +136,18 @@ class TestShell(AppGeneric): # Requires a SessionChannel. TODO: Check for this.
 			except queue.Empty:
 				continue
 
+			print("INPUT_BUFFER =", input_buffer)
+
 			# If we have received any ^D, we must exit
-			if bytes([self.config.eof]) in input_buffer:
+			if self.eof_char is not None and self.eof_char in input_buffer:
 				self.send_CHANNEL_CLOSE()
 				self.running.clear()
 				break
 
 			# If we received a new line, handle the buffer correctly
-			if b"\r" in input_buffer:
-				self.word, _, input_buffer = input_buffer.partition(b"\r\n")
-				self.word += b"\r\n"
+			if self.in_NL in input_buffer:
+				self.word, _, input_buffer = input_buffer.partition(self.in_NL)
+				self.word += self.out_NL
 
 
 	def print_loop(self):

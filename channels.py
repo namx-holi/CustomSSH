@@ -49,9 +49,6 @@ class ChannelHandler:
 
 
 	def close_channel(self, channel_id):
-		channel = self.channels.get(channel_id)
-		channel.handle_CHANNEL_CLOSE()
-		del channel
 		del self.channels[channel_id]
 		print(f" [*] Channel {channel_id} closed.")
 
@@ -59,10 +56,12 @@ class ChannelHandler:
 	def close_all_channels(self):
 		channel_ids = list(self.channels.keys())
 		for channel_id in channel_ids:
+			channel = self.channels.get(channel_id)
+			channel.handle_CHANNEL_CLOSE()
 			self.close_channel(channel_id)
 
 
-	def handle_CHANNEL_OPEN(self, msg, client_running, message_handler):
+	def handle_CHANNEL_OPEN(self, msg, message_handler):
 		# If we have already hit the server max of channels, return a
 		#  resource shortage message
 		if self.SERVER_CHANNELS_COUNT >= self.SERVER_CHANNELS_MAX:
@@ -86,7 +85,6 @@ class ChannelHandler:
 				client_channel_id=client_channel_id,
 				initial_window_size=initial_window_size,
 				maximum_packet_size=maximum_packet_size,
-				client_running=client_running,
 				message_handler=message_handler)
 			server_channel_id = self.add_channel(channel)
 
@@ -152,6 +150,17 @@ class ChannelHandler:
 		channel.handle_CHANNEL_DATA(msg)
 
 
+	# TODO: Implement
+	def handle_CHANNEL_EXTENDED_DATA(self, msg):
+		# Get the channel. If there is no existing channel for the
+		#  given recipient channel, then end here
+		channel = self.channels.get(msg.recipient_channel)
+		if channel is None:
+			return
+
+		print("TODO: Implement handle_CHANNEL_EXTENDED_DATA")
+
+
 	def handle_CHANNEL_CLOSE(self, msg):
 		# Get the channel. If there is no existing channel for the
 		#  given recipient channel, then end here
@@ -160,7 +169,19 @@ class ChannelHandler:
 			return
 
 		# Close that channel
+		channel.handle_CHANNEL_CLOSE()
 		self.close_channel(msg.recipient_channel)
+
+
+	def handle_CHANNEL_EOF(self, msg):
+		# Get the channel. If there is no existing channel for the
+		#  given recipient channel, then end here
+		channel = self.channels.get(msg.recipient_channel)
+		if channel is None:
+			return
+
+		# Pass on message to channel
+		channel.handle_CHANNEL_EOF()
 		
 
 
@@ -172,17 +193,12 @@ class SessionChannel:
 		client_channel_id,
 		initial_window_size,
 		maximum_packet_size,
-		client_running,
 		message_handler
 	):
 		self.client_handler = client_handler
 		self.client_channel_id = client_channel_id
 		self.initial_window_size = initial_window_size
 		self.maximum_packet_size = maximum_packet_size
-
-		# Client connection running loop is passed so that we can close
-		#  the connection with client if the app exits
-		self.client_running = client_running
 
 		# Message handler passed from the client. This is done so that
 		#  data can be sent to the client asynchronously
@@ -205,6 +221,8 @@ class SessionChannel:
 		request_type = msg.request_type
 
 		# SSH-CONNECT 6.2.
+		# NOTE: If user connects using ssh -T ..., pty-req is skipped
+		#  and shell is directly called, so config may not be set up.
 		if request_type == "pty-req":
 			# Handle the terminal width/height
 			success1 = self.config.set_window_size(
@@ -375,6 +393,20 @@ class SessionChannel:
 		self.sent_channel_close = True
 
 
+	def handle_CHANNEL_EOF(self):
+		# No explicit response is sent to this message. However, we
+		#  may send EOF to the client. The channel remains open after
+		#  this message, and more data may still be sent in the other
+		#  direction. This message does not consume window space and
+		#  can be sent even if no window space is available.
+		self.send_CHANNEL_EOF()
+		self.send_CHANNEL_CLOSE()
+
+
+	def send_CHANNEL_EOF(self):
+		msg = SSH_MSG_CHANNEL_EOF(self.client_channel_id)
+		self.message_handler.send(msg)
+
 
 
 class PseudoTerminalConfig:
@@ -412,6 +444,17 @@ class PseudoTerminalConfig:
 		self.susp2 = None   # alternate for sending a termainl stop signal
 		self.swtch = None   # will switch to a different shell layer
 		self.werase = None  # will erase the last word typed
+
+		# Input settings
+		self.inlcr = 0 # Map NL into CR on input
+		self.igncr = 0 # Ignore CR on input
+		self.icrnl = 0 # Map CR to NL on input
+
+		# Output settings
+		self.onlcr = 0 # Map NL to CR-NL (output)
+		self.ocrnl = 0 # Translate CR to NL (output)
+		self.onocr = 0 # Translate NL to CRNL (output)
+		self.onlret = 0 # Newline performs a carriage return (output)
 
 		# Special settings
 		self.ispeed = None # the input speed, baud rate
@@ -454,6 +497,17 @@ class PseudoTerminalConfig:
 			# elif opcode == 17: # VSTATUS
 			# elif opcode == 18: # VDISCARD
 			
+			# Input settings
+			elif opcode == 34: self.inlcr = r.read_uint32() # INLCR
+			elif opcode == 35: self.igncr = r.read_uint32() # IGNCR
+			elif opcode == 36: self.icrnl = r.read_uint32() # ICRNL
+
+			# Output settings
+			elif opcode == 72: self.onlcr = r.read_uint32() # ONLCR
+			elif opcode == 73: self.ocrnl = r.read_uint32() # ONLCR
+			elif opcode == 74: self.onocr = r.read_uint32() # ONOCR
+			elif opcode == 75: self.onlret = r.read_uint32() # ONLRET
+
 			# Special settings
 			elif opcode == 128: self.ispeed = r.read_uint32() # 128
 			elif opcode == 129: self.ospeed = r.read_uint32() # 129
