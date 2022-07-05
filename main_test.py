@@ -20,9 +20,16 @@ def main():
 	# Wait for a connection
 	print("Running...")
 	while True:
+		# Accept a connection
 		conn, addr = s.accept()
+
 		c = ClientHandler(conn, auth_handler)
 		c.start()
+
+		# When c.start() returns, we can shutdown the connection
+		conn.shutdown(2) # 0=done recv, 1=done send, 2=both
+		conn.close()
+
 		print(f" [*] Client {addr[0]}:{addr[1]} disconnected")
 
 main()

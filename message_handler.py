@@ -1,9 +1,16 @@
 
+import select
 import struct
 import threading
 from os import urandom
 
 from messages import SSH_MSG
+
+
+# # Exception class used to pass a descriptive error up to client handler
+# class ClientDisconnectedError(Exception): # UNUSED
+# 	...
+
 
 
 class MessageHandler:
@@ -36,6 +43,9 @@ class MessageHandler:
 		MAC algorithm MUST be "none".
 	"""
 
+	POLL_TIMEOUT = 5 # Seconds
+
+
 	def __init__(self, conn):
 		self.conn = conn
 
@@ -56,6 +66,17 @@ class MessageHandler:
 		self.mac_algo_s_to_c = None
 		self.compression_algo_c_to_s = None
 		self.compression_algo_s_to_c = None
+
+
+	def increment_client_sequence_number(self):
+		# TODO: Handle wrapping of 2**32
+		self._client_sequence_number += 1
+
+
+	def increment_server_sequence_number(self):
+		# TODO: Handle wrapping of 2**32
+		self._server_sequence_number += 1
+
 
 	# Wrappers for algorithms
 	@property
@@ -97,7 +118,23 @@ class MessageHandler:
 		return self.compression_algo_s_to_c.compress(data)
 
 
+	# TODO: Handle polling for sending and receiving from socket?
+	# def poll(self): # UNUSED!
+	# 	# Checks if the connection is still open. Will raise an exception
+	# 	#  if not still open.
+	# 	try:
+	# 		ready_to_read, ready_to_write, in_error = select.select([self.conn,], [self.conn,], [], self.POLL_TIMEOUT)
+	# 	except select.error:
+	# 		# Looks like connection has closed. Raise our own error.
+	# 		raise ClientDisconnectedError()
+	# 	# TODO: Use ready_to_read, ready_to_write to actually control
+	# 	#  reading and writing.
+
+
 	def recv(self):
+		# # Poll connection before receiving
+		# self.poll()
+
 		# Read the first block that should contain the packet length.
 		first_block = self.conn.recv(max(8, self.client_block_size))
 		if first_block == b"":
@@ -112,7 +149,7 @@ class MessageHandler:
 		#  accomodate for that by reading 4 less bytes. We have also
 		#  already read 4 one block, so accomodate for that too.
 		remaining_payload_length = packet_len - self.client_block_size + 4
-		remaining_blocks = self.conn.recv(remaining_payload_length)
+		remaining_blocks = self.conn.recv(remaining_payload_length) # TODO: Poll?
 		remaining_blocks = self.decrypt(remaining_blocks)
 		full_packet = first_block + remaining_blocks
 
@@ -138,7 +175,7 @@ class MessageHandler:
 		msg.SEQ_NUMBER = self._client_sequence_number
 
 		# Increment the client sequence number
-		self._client_sequence_number += 1
+		self.increment_client_sequence_number()
 		return msg
 
 
@@ -174,11 +211,14 @@ class MessageHandler:
 
 		# Increment the server-side sequence number and send
 		print(f" -> Sending SEQ:{self._server_sequence_number}, {msg.__class__.__name__}")
-		self._server_sequence_number += 1
+		self.increment_server_sequence_number()
 		
 		# We can release the sequence number now as we don't access or
 		#  increment it anymore
-		self._server_sequence_number.release()
+		self._server_sequence_number_lock.release()
+
+		# # Poll connection before sending
+		# self.poll()
 
 		self.conn.send(full_packet)
 

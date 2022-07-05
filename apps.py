@@ -132,7 +132,7 @@ class TestShell(AppGeneric): # Requires a SessionChannel. TODO: Check for this.
 		while self.running.isSet():
 			# Read next pending user input
 			try:
-				input_buffer += self.data_queue.get(timeout=1)
+				input_buffer += self.data_queue.get(timeout=0.5)
 			except queue.Empty:
 				continue
 
