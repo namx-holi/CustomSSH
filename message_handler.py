@@ -1,5 +1,6 @@
 
 import struct
+import threading
 from os import urandom
 
 from messages import SSH_MSG
@@ -41,6 +42,12 @@ class MessageHandler:
 		# TODO: Handle wrapping of the seq numbers
 		self._client_sequence_number = 0
 		self._server_sequence_number = 0
+		
+		# Accessing the server sequence number must be atomic as
+		#  otherwise apps that are running in the background may try to
+		#  send a message at the same time as another app, leading to a
+		#  duplicated sequence number giving an invalid MAC.
+		self._server_sequence_number_lock = threading.Lock()
 
 		# Algorithms being used. If None, they are ignored
 		self.encryption_algo_c_to_s = None
@@ -122,12 +129,16 @@ class MessageHandler:
 		# Handle decompression
 		payload = self.decompress(compressed_payload)
 
-		# Increment the client sequence number
-		self._client_sequence_number += 1
-
 		# Turn into an SSH msg
 		msg = SSH_MSG.read_msg(payload)
-		print(f" <- Received {msg.__class__.__name__}")
+		print(f" <- Received SEQ:{self._client_sequence_number}, {msg.__class__.__name__}")
+
+		# Store the sequence number in the message as we may need it if
+		#  this method is unimplemented.
+		msg.SEQ_NUMBER = self._client_sequence_number
+
+		# Increment the client sequence number
+		self._client_sequence_number += 1
 		return msg
 
 
@@ -135,8 +146,6 @@ class MessageHandler:
 		# If no message, end here
 		if msg is None:
 			return
-
-		print(f" -> Sending {msg.__class__.__name__}")
 
 		# Handle compression
 		compressed_payload = self.compress(msg.payload())
@@ -156,13 +165,21 @@ class MessageHandler:
 			struct.pack(">I", packet_length)
 			+ data)
 
-		# Generate mac, encrypt data, and generate full packet
+		# Generate mac, encrypt data, and generate full packet. We need to
+		#  atomically acquire the sequence number for this
+		self._server_sequence_number_lock.acquire()
 		mac = self.generate_mac(data)
 		data = self.encrypt(data)
 		full_packet = data + mac
 
 		# Increment the server-side sequence number and send
+		print(f" -> Sending SEQ:{self._server_sequence_number}, {msg.__class__.__name__}")
 		self._server_sequence_number += 1
+		
+		# We can release the sequence number now as we don't access or
+		#  increment it anymore
+		self._server_sequence_number.release()
+
 		self.conn.send(full_packet)
 
 
