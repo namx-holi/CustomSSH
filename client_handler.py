@@ -58,9 +58,13 @@ class ClientHandler:
 		self.running = True
 		while self.running:
 			msg = self.message_handler.recv()
-			if msg is None: # If no packet
-				# Just exit for now. This should be handled by polling.
-				return 
+
+			# If the client disconnects from an invalid mac or anything,
+			#  they will not send a MSG_DISCONNECT and just drop conn.
+			if msg is None:
+				self.stop()
+				return
+
 			self.handle_message(msg)
 
 
