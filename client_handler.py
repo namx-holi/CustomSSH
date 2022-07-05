@@ -113,8 +113,9 @@ class ClientHandler:
 
 		# Any other codes
 		else:
-			self.running = False # Stop running
 			print(f"Received an unhandled message type: {msg}")
+			msg = messages.SSH_MSG_UNIMPLEMENTED(msg.SEQ_NUMBER)
+			self.message_handler.send(msg)
 
 
 	####################
