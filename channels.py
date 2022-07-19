@@ -1,7 +1,9 @@
 
 from itertools import count, filterfalse
 
-from apps import TestShell
+from apps.shells import TestShell
+from apps.chat import BasicChatApp
+
 from data_types import DataReader
 from messages import (
 	SSH_MSG_CHANNEL_OPEN_CONFIRMATION,
@@ -265,10 +267,7 @@ class SessionChannel:
 			# This message will request that the user's default shell
 			#  (typically defined in /etc/passwd in UNIX systems) be
 			#  started.
-			if self.app_has_been_started:
-				return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
-			self.start_shell()
-			return SSH_MSG_CHANNEL_SUCCESS(self.client_channel_id)
+			return self.start_app(BasicChatApp)
 
 		# SSH-CONNECT 6.5.
 		elif request_type == "exec":
@@ -280,11 +279,11 @@ class SessionChannel:
 			#  prevent the execution of unauthorized commands.
 			
 			# We don't handle this currently
-			print(f" [!] Client requested exec requet_type. Command={command}")
+			print(f" [!] Client requested exec request. Command={command}")
 			return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
 
 		# SSH-CONNECT 6.5.
-		elif request_type == "subsystem": # Unhandled
+		elif request_type == "subsystem":
 			subsystem_name = msg.subsystem_name
 			# This last form executes a predefined subsystem. It is
 			#  expected that these will include a general file transfer
@@ -297,9 +296,12 @@ class SessionChannel:
 			#  initialization scripts, etc. This spurious output from
 			#  the shell may be filtered out either at the server or at
 			#  the client.
+			if subsystem_name == "test":
+				return self.start_app(TestShell)
 
-			print(f" [!] Client requested 'subsystem:' Sybsystem name={subsystem_name}")
-			return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
+			else:
+				print(f" [!] Client requested 'subsystem:' Sybsystem name={subsystem_name}")
+				return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
 
 		# SSH-CONNECT 6.7.
 		elif request_type == "window-change":
@@ -342,12 +344,23 @@ class SessionChannel:
 			return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
 
 
-	def start_shell(self):
-		# Start a thread that sends "Hi!" every couple seconds to the
-		#  client to demonstrate async sending
+	# def start_shell(self):
+	# 	# Start a thread that sends "Hi!" every couple seconds to the
+	# 	#  client to demonstrate async sending
+	# 	self.app_has_been_started = True
+	# 	self.app = TestShell(self)
+	# 	self.app.start()
+
+
+	def start_app(self, app_class):
+		if self.app_has_been_started:
+			return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
+
 		self.app_has_been_started = True
-		self.app = TestShell(self)
+		self.app = app_class(self)
 		self.app.start()
+
+		return SSH_MSG_CHANNEL_SUCCESS(self.client_channel_id)
 
 
 	# Passes CHANNEL_DATA down from client handler to app
