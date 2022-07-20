@@ -80,6 +80,9 @@ class Game:
 	def move_flag_right(self):
 		self.flag_offset_x = np.clip(self.flag_offset_x+1, 1, 100)
 
+	def draw_demon(self):
+		self.screen.draw_image(20, 20, "apps/doom/Cacodemon_sprite.png")
+
 
 
 
@@ -182,6 +185,7 @@ class DoomGame(AppGeneric):
 			elif key == b"s": self.handle_key_s()
 			elif key == b"d": self.handle_key_d()
 			elif key == b" ": self.handle_key_space()
+			elif key == b"e": self.handle_key_e()
 
 			# Unbound keys
 			else:
@@ -244,6 +248,9 @@ class DoomGame(AppGeneric):
 
 	def handle_key_space(self):
 		self.game.toggle_flag()
+
+	def handle_key_e(self):
+		self.game.draw_demon()
 
 	def handle_key_unbound(self, key):
 		print(f"Unhandled key {key}")

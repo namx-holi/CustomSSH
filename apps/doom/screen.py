@@ -1,4 +1,5 @@
 
+import cv2
 import numpy as np
 
 
@@ -37,6 +38,9 @@ def ansi_set_full_colour(fg_colour, bg_colour):
 
 def ansi_move_cursor(x, y):
 	return ansi_command(f"{y+1};{x+1}" + "H")
+
+
+
 
 
 
@@ -79,6 +83,43 @@ class Screen:
 		self.pending[y1:y2, x1:x2] = colour
 
 
+	def draw_image(self, x, y, filename):
+		# Loads an image and draws it to canvas with top left corner at
+		#  the given coordinate
+		img = cv2.imread(filename, cv2.IMREAD_UNCHANGED) # unchanged for alpha channel
+		height, width, _ = img.shape
+
+		# Combine the RGB channels into one hex number
+		pixels = img[:,:,2]*0x10000 + img[:,:,1]*0x100 + img[:,:,0]
+
+		# Extract only non transparent pixels
+		visible = img[:,:,3] > 0
+
+		# Calculate overlap of the image with the screen borders
+		l_overlap = -min(0, x)
+		r_overlap = max(0, x + width - self.width)
+		t_overlap = -min(0, y)
+		b_overlap = max(0, y + height - self.height)
+
+		# Calculate the region of screen space that is going to be drawn
+		#  to, and the region of the image that is to be drawn
+		img_x1 = l_overlap # Start from what doesn't left overlap
+		img_x2 = width - r_overlap # Cut off right overlap
+		img_y1 = t_overlap # Start from what doesn't top overlap
+		img_y2 = height - b_overlap # Cut off bottom overlap
+		scr_x1 = x + l_overlap # Cut off printing space by overlap
+		scr_x2 = x + width - r_overlap # Cut off printing space by overlap
+		scr_y1 = y + t_overlap # Cut off printing space by overlap
+		scr_y2 = y + height - b_overlap # Cut off printing space by overlap
+
+		# Extract the visible pixels from what's actually going to be displayed
+		visible = img[img_y1:img_y2,img_x1:img_x2,3] > 0
+
+		# Draw the visible pixels to canvas
+		# self.pending[scr_y1:scr_y2,scr_x1:scr_x2] = pixels[img_y1:img_y2,img_x1:img_x2]
+		self.pending[scr_y1:scr_y2,scr_x1:scr_x2][visible] = pixels[img_y1:img_y2,img_x1:img_x2][visible]
+
+
 	def clear(self):
 		self.canvas[:] = 0
 		self.pending[:] = self.NO_CHANGE
@@ -99,13 +140,17 @@ class Screen:
 			# No updates required
 			return
 
+		data_blocks = []
 		data = ""
 		last_row = None
 		last_col = None
 		last_colours = None
 
+		max_packet_length = 4096
+
 		# Get only characters that need to be updated, and the locations
 		#  of those changes
+		new_data = ""
 		for row, col in zip(*np.where(diff != 0)):
 			upper_colour = self.pending[2*row, col]
 			if upper_colour == self.NO_CHANGE:
@@ -117,31 +162,43 @@ class Screen:
 
 			colours = (upper_colour, lower_colour)
 
-
 			# If we are in the same row, the next column, and same colours
 			if row == last_row and col-1 == last_col and colours == last_colours:
 				# We can just continue on from the last pixel as it's the same
-				data += self.px
+				new_data = self.px
 
 			# If we are in the same row, the next column, but different colours
 			elif row == last_row and col-1 == last_col:
 				# Need to set the new colours and then print the pixel
-				data += ansi_set_full_colour(*colours) + self.px
+				new_data = ansi_set_full_colour(*colours) + self.px
 
 			# If we have skipped any columns or rows, but kept the colours
 			elif colours == last_colours:
 				# We must move the cursor and draw the pixel
-				data += ansi_move_cursor(col, row) + self.px
+				new_data = ansi_move_cursor(col, row) + self.px
 
 			# If we have skipped any columns or rows and a new colour
 			else:
 				# We must move the cursor, update colours, and then draw pixel
-				data += ansi_move_cursor(col, row) + ansi_set_full_colour(*colours) + self.px
+				new_data = ansi_move_cursor(col, row) + ansi_set_full_colour(*colours) + self.px
+
+			# Add the new data, unless it exceeds the max packet length,
+			#  then the existing data is added to the data blocks and
+			#  a new data is started
+			if len(data) + len(new_data) > max_packet_length:
+				data_blocks.append(data)
+				data = new_data
+			else:
+				data += new_data
 
 			# Update the last_ variables
 			last_row = row
 			last_col = col
 			last_colours = colours
+
+		# If there is existing data in new_data, add it to the blocks
+		if data:
+			data_blocks.append(data)
 
 		# Update the canvas and reset the pending
 		self.canvas[0::2][diff_top != 0] = self.pending[0::2][diff_top != 0]
@@ -149,7 +206,9 @@ class Screen:
 		self.pending[:] = self.NO_CHANGE
 
 		# Send off the changes to client's screen
-		self.sender(data)
+		import time
+		for d in data_blocks:
+			self.sender(d)
 
 
 
