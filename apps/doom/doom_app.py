@@ -6,6 +6,7 @@ import time
 
 from apps.generic import AppGeneric
 from apps.doom.screen import Screen
+from apps.doom.wad import WAD
 
 
 
@@ -23,6 +24,51 @@ class Game:
 
 		self.flag_toggle = False
 		self.draw_trans_flag()
+
+		# Add stuff here to test
+		wad = WAD("apps/doom/doom.wad")
+		wad.load()
+		m = wad.load_map("E1M1")
+		print(m)
+
+		# Draw the doom map on screen!
+		self.draw_map(m)
+
+
+	def draw_map(self, map_):
+		# Calculate what we need to shift the map by
+		x_offset = 0
+		y_offset = 0
+		for v in map_.vertexes:
+			if v.x < x_offset: x_offset = v.x
+			if v.y < y_offset: y_offset = v.y
+		# Invert offset so we can add it to negative values to bring
+		#  them above 0
+		x_offset *= -1
+		y_offset *= -1
+		print("X offset is", x_offset)
+		print("Y offset is", y_offset)
+
+		scale_factor = 15
+
+		# Increase offset so it draws a bit off the borders
+		postscale_x_offset = 5
+		postscale_y_offset = -7
+
+		# Get the screen size so we can draw this not inverted
+		screen_height = self.screen.height - 1 # -1 bc pixels indexed at 0
+
+		# Draw all the lines!
+		for l in map_.linedefs:
+			start_vertex = map_.vertexes[l.start_vertex]
+			end_vertex   = map_.vertexes[l.end_vertex]
+			self.screen.draw_line(
+				(start_vertex.x + x_offset)//scale_factor + postscale_x_offset,
+				(end_vertex.x + x_offset)//scale_factor + postscale_x_offset,
+				screen_height - (start_vertex.y + y_offset)//scale_factor + postscale_y_offset,
+				screen_height - (end_vertex.y + y_offset)//scale_factor + postscale_y_offset,
+				0xffffff)
+
 
 	def draw_trans_flag(self):
 		self.screen.draw_box( # blue

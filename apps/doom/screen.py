@@ -55,8 +55,9 @@ class Screen:
 		# Used to signify no update in pending
 		self.NO_CHANGE = -1
 
-		self.width  = width
-		self.height = height*2
+		self.width  = np.clip(width, 0, 320)
+		self.height = np.clip(height*2, 0, 200)
+		print(f"Created screen of size ({self.width}x{self.height})")
 
 		self.canvas  = np.zeros((self.height, self.width), dtype=int)
 		self.pending = np.empty((self.height, self.width), dtype=int)
@@ -73,13 +74,56 @@ class Screen:
 
 
 	def draw_pixel(self, x, y, colour):
+		# Don't draw if out of screen range
+		if x < 0 or x >= self.width:
+			return
+		if y < 0 or y >= self.height:
+			return
+
 		# Sets one pixel in the pending view
 		self.pending[y,x] = colour
 
 
+	def draw_line(self, x1, x2, y1, y2, colour):
+		"""Bresenham's line algorithm from rosetta code"""
+
+		dx = abs(x2 - x1)
+		dy = abs(y2 - y1)
+
+		# TODO: If there is no gradient, just draw boxes, much quicker
+
+		x, y = x1, y1
+		sx = -1 if x1 > x2 else 1
+		sy = -1 if y1 > y2 else 1
+		if dx > dy:
+			err = dx / 2.0
+			while x != x2:
+				self.draw_pixel(x, y, colour)
+				err -= dy
+				if err < 0:
+					y += sy
+					err += dx
+				x += sx
+		else:
+			err = dy / 2.0
+			while y != y2:
+				self.draw_pixel(x, y, colour)
+				err -= dx
+				if err < 0:
+					x += sx
+					err += dy
+				y += sy
+		self.draw_pixel(x, y, colour)
+
+
 	def draw_box(self, x1, x2, y1, y2, colour):
+		# Swapping coords if we need to to draw from top left to bot right
+		if x1 > x2:
+			x1, x2 = x2, x1
+		if y1 > y2:
+			y1, y2 = y2, y1
+
 		# Draws a filled box from (x1,y1) to (x2,y2) in a colour
-		# TODO: Should this +1 to be inclusive?
 		self.pending[y1:y2, x1:x2] = colour
 
 
