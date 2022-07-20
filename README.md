@@ -44,7 +44,7 @@ Immediately after, key exchange begins.
 
 
 ## Notes
-Currently only certain easy to implement algorithms are available. To get the ssh client to use these, use
+Currently not all required algorithms are implemented, though enough are implemented to be able to find a match most of the time. To force the client to use some of the easier algorithms if there isn't a match, this command can be used to connect instead
 ```sh
 ssh -vv -p 2222 user@127.0.0.1 -oKexAlgorithms=diffie-hellman-group14-sha1 -oCiphers=aes128-cbc
 ```
