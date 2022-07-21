@@ -5,8 +5,11 @@ import threading
 import time
 
 from apps.generic import AppGeneric
+
 from apps.doom.screen import Screen
-from apps.doom.wad import WAD
+from apps.doom.doom_engine import DoomEngine
+# from apps.doom.wad import WAD
+# from apps.doom.player import Player
 
 
 
@@ -25,90 +28,50 @@ class Game:
 		self.flag_toggle = False
 		self.draw_trans_flag()
 
-		# Add stuff here to test
-		wad = WAD("apps/doom/doom.wad")
-		wad.load()
-		m = wad.load_map("E1M1")
-		print(m)
-
-		# Draw the doom map on screen!
-		self.draw_map(m)
-
-
-	def draw_map(self, map_):
-		# Calculate what we need to shift the map by
-		x_offset = 0
-		y_offset = 0
-		for v in map_.vertexes:
-			if v.x < x_offset: x_offset = v.x
-			if v.y < y_offset: y_offset = v.y
-		# Invert offset so we can add it to negative values to bring
-		#  them above 0
-		x_offset *= -1
-		y_offset *= -1
-		print("X offset is", x_offset)
-		print("Y offset is", y_offset)
-
-		scale_factor = 15
-
-		# Increase offset so it draws a bit off the borders
-		postscale_x_offset = 5
-		postscale_y_offset = -7
-
-		# Get the screen size so we can draw this not inverted
-		screen_height = self.screen.height - 1 # -1 bc pixels indexed at 0
-
-		# Draw all the lines!
-		for l in map_.linedefs:
-			start_vertex = map_.vertexes[l.start_vertex]
-			end_vertex   = map_.vertexes[l.end_vertex]
-			self.screen.draw_line(
-				(start_vertex.x + x_offset)//scale_factor + postscale_x_offset,
-				(end_vertex.x + x_offset)//scale_factor + postscale_x_offset,
-				screen_height - (start_vertex.y + y_offset)//scale_factor + postscale_y_offset,
-				screen_height - (end_vertex.y + y_offset)//scale_factor + postscale_y_offset,
-				0xffffff)
+		# Start doom and draw map
+		doom = DoomEngine()
+		doom.draw_automap(self.screen)
 
 
 	def draw_trans_flag(self):
 		self.screen.draw_box( # blue
 			 0+self.flag_offset_x, 20+self.flag_offset_x,
 			 0+self.flag_offset_y,  4+self.flag_offset_y,
-			0x55cdfd)
+			0x55cdfd, fill=True)
 		self.screen.draw_box( # pink
 			 0+self.flag_offset_x, 20+self.flag_offset_x,
 			 4+self.flag_offset_y,  8+self.flag_offset_y,
-			0xf6aab7)
+			0xf6aab7, fill=True)
 		self.screen.draw_box( # white
 			 0+self.flag_offset_x, 20+self.flag_offset_x,
 			 8+self.flag_offset_y, 12+self.flag_offset_y,
-			0xffffff)
+			0xffffff, fill=True)
 		self.screen.draw_box( # pink
 			 0+self.flag_offset_x, 20+self.flag_offset_x,
 			12+self.flag_offset_y, 16+self.flag_offset_y,
-			0xf6aab7)
+			0xf6aab7, fill=True)
 		self.screen.draw_box( # blue
 			 0+self.flag_offset_x, 20+self.flag_offset_x,
 			16+self.flag_offset_y, 20+self.flag_offset_y,
-			0x55cdfd)
+			0x55cdfd, fill=True)
 
 	def draw_nb_flag(self):
 		self.screen.draw_box( # yellow
 			 0+self.flag_offset_x, 20+self.flag_offset_x,
 			 0+self.flag_offset_y,  5+self.flag_offset_y,
-			0xfcf431)
+			0xfcf431, fill=True)
 		self.screen.draw_box( # white
 			 0+self.flag_offset_x, 20+self.flag_offset_x,
 			 5+self.flag_offset_y, 10+self.flag_offset_y,
-			0xffffff)
+			0xffffff, fill=True)
 		self.screen.draw_box( # purple
 			 0+self.flag_offset_x, 20+self.flag_offset_x,
 			10+self.flag_offset_y, 15+self.flag_offset_y,
-			0x9d59d2)
+			0x9d59d2, fill=True)
 		self.screen.draw_box( # black
 			 0+self.flag_offset_x, 20+self.flag_offset_x,
 			15+self.flag_offset_y, 20+self.flag_offset_y,
-			0x000000)
+			0x000000, fill=True)
 
 	def toggle_flag(self):
 		if self.flag_toggle:
@@ -272,6 +235,8 @@ class DoomGame(AppGeneric):
 		"""
 		while self.running.isSet():
 			time.sleep(1)
+			# self.game.toggle_flag()
+			# time.sleep(2/30)
 
 
 	################

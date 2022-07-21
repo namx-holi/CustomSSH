@@ -1,6 +1,7 @@
 
 import cv2
 import numpy as np
+import threading
 
 
 # ANSI primitives
@@ -64,12 +65,15 @@ class Screen:
 
 		self.pending[:] = self.NO_CHANGE
 
+		# Prevents writing to the pending table if already writing to
+		self.pending_lock = threading.Lock()
+
 		# Data will be sent to the client by calling this sender
 		self.sender = sender
 
 		# Clear the screen to start off, then fill it with black.
 		self.clear()
-		self.draw_box(0,self.width,0,self.height, 0x333333)
+		self.draw_box(0,self.width,0,self.height, 0x333333, fill=True)
 		self.refresh()
 
 
@@ -81,7 +85,9 @@ class Screen:
 			return
 
 		# Sets one pixel in the pending view
+		self.pending_lock.acquire()
 		self.pending[y,x] = colour
+		self.pending_lock.release()
 
 
 	def draw_line(self, x1, x2, y1, y2, colour):
@@ -91,6 +97,10 @@ class Screen:
 		dy = abs(y2 - y1)
 
 		# TODO: If there is no gradient, just draw boxes, much quicker
+		if dx == 0 or dy == 0:
+			self.draw_box(x1, x2, y1, y2, colour, fill=True)
+			self.draw_pixel(x2, y2, colour)
+			return
 
 		x, y = x1, y1
 		sx = -1 if x1 > x2 else 1
@@ -116,15 +126,40 @@ class Screen:
 		self.draw_pixel(x, y, colour)
 
 
-	def draw_box(self, x1, x2, y1, y2, colour):
+	def draw_box(self, x1, x2, y1, y2, colour, fill=False):
+		# Draws a filled box from (x1,y1) to (x2,y2) in a colour
+
 		# Swapping coords if we need to to draw from top left to bot right
 		if x1 > x2:
 			x1, x2 = x2, x1
 		if y1 > y2:
 			y1, y2 = y2, y1
 
-		# Draws a filled box from (x1,y1) to (x2,y2) in a colour
-		self.pending[y1:y2, x1:x2] = colour
+		# If any x or y coords are the same, indexing [x:x] won't give
+		#  anything, so we need to address slightly differently
+		if x1 == x2 and y1 == y2:
+			self.draw_pixel(x1,y1,colour)
+		elif x1 == x2:
+			self.pending_lock.acquire()
+			self.pending[y1:y2,x1:x1+1] = colour # Vertical line
+			self.pending_lock.release()
+		elif y1 == y2:
+			self.pending_lock.acquire()
+			self.pending[y1:y1+1,x1:x2] = colour # Horizontal line
+			self.pending_lock.release()
+		elif fill:
+			self.pending_lock.acquire()
+			self.pending[y1:y2, x1:x2] = colour # Actual box
+			self.pending_lock.release()
+		else:
+			# Draw 4 boxes, one for each border
+			# TODO: Speed this up possibly?
+			self.pending_lock.acquire()
+			self.pending[y1:y1+1, x1:x2] = colour # Top
+			self.pending[y2-1:y2, x1:x2] = colour # Bottom
+			self.pending[y1:y2, x1:x1+1] = colour # Left
+			self.pending[y1:y2, x2-1:x2] = colour # Right
+			self.pending_lock.release()
 
 
 	def draw_image(self, x, y, filename):
@@ -161,12 +196,16 @@ class Screen:
 
 		# Draw the visible pixels to canvas
 		# self.pending[scr_y1:scr_y2,scr_x1:scr_x2] = pixels[img_y1:img_y2,img_x1:img_x2]
+		self.pending_lock.acquire()
 		self.pending[scr_y1:scr_y2,scr_x1:scr_x2][visible] = pixels[img_y1:img_y2,img_x1:img_x2][visible]
+		self.pending_lock.release()
 
 
 	def clear(self):
+		self.pending_lock.acquire()
 		self.canvas[:] = 0
 		self.pending[:] = self.NO_CHANGE
+		self.pending_lock.release()
 		self.sender(ansi_clear())
 
 
@@ -175,9 +214,16 @@ class Screen:
 
 
 	def refresh(self):
-		# Find if there are any changes needing to be made
+		# Find if there are any changes needing to be made. Also update
+		#  the canvas and pending.
+		self.pending_lock.acquire()
 		diff_top = (self.pending[0::2] != self.NO_CHANGE) * (self.canvas[0::2] - self.pending[0::2])
 		diff_bot = (self.pending[1::2] != self.NO_CHANGE) * (self.canvas[1::2] - self.pending[1::2])
+		self.canvas[0::2][diff_top != 0] = self.pending[0::2][diff_top != 0]
+		self.canvas[1::2][diff_bot != 0] = self.pending[1::2][diff_bot != 0]
+		self.pending[:] = self.NO_CHANGE
+		self.pending_lock.release()
+
 		diff = (diff_top << 24) + diff_bot # Store top pixel colour in upper bytes
 
 		if np.sum(diff) == 0:
@@ -243,11 +289,6 @@ class Screen:
 		# If there is existing data in new_data, add it to the blocks
 		if data:
 			data_blocks.append(data)
-
-		# Update the canvas and reset the pending
-		self.canvas[0::2][diff_top != 0] = self.pending[0::2][diff_top != 0]
-		self.canvas[1::2][diff_bot != 0] = self.pending[1::2][diff_bot != 0]
-		self.pending[:] = self.NO_CHANGE
 
 		# Send off the changes to client's screen
 		import time
