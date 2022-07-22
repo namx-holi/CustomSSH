@@ -31,67 +31,21 @@ class Game:
 		# Start doom engine
 		self.doom_engine = DoomEngine()
 
+	def turn_left(self):
+		self.doom_engine.player.turn_left()
+	def turn_right(self):
+		self.doom_engine.player.turn_right()
+	def move_forward(self):
+		self.doom_engine.player.move_forward()
+	def move_backward(self):
+		self.doom_engine.player.move_backward()
 
-	def draw_trans_flag(self):
-		self.screen.draw_box( # blue
-			 0+self.flag_offset_x, 20+self.flag_offset_x,
-			 0+self.flag_offset_y,  4+self.flag_offset_y,
-			0x55cdfd, fill=True)
-		self.screen.draw_box( # pink
-			 0+self.flag_offset_x, 20+self.flag_offset_x,
-			 4+self.flag_offset_y,  8+self.flag_offset_y,
-			0xf6aab7, fill=True)
-		self.screen.draw_box( # white
-			 0+self.flag_offset_x, 20+self.flag_offset_x,
-			 8+self.flag_offset_y, 12+self.flag_offset_y,
-			0xffffff, fill=True)
-		self.screen.draw_box( # pink
-			 0+self.flag_offset_x, 20+self.flag_offset_x,
-			12+self.flag_offset_y, 16+self.flag_offset_y,
-			0xf6aab7, fill=True)
-		self.screen.draw_box( # blue
-			 0+self.flag_offset_x, 20+self.flag_offset_x,
-			16+self.flag_offset_y, 20+self.flag_offset_y,
-			0x55cdfd, fill=True)
-
-	def draw_nb_flag(self):
-		self.screen.draw_box( # yellow
-			 0+self.flag_offset_x, 20+self.flag_offset_x,
-			 0+self.flag_offset_y,  5+self.flag_offset_y,
-			0xfcf431, fill=True)
-		self.screen.draw_box( # white
-			 0+self.flag_offset_x, 20+self.flag_offset_x,
-			 5+self.flag_offset_y, 10+self.flag_offset_y,
-			0xffffff, fill=True)
-		self.screen.draw_box( # purple
-			 0+self.flag_offset_x, 20+self.flag_offset_x,
-			10+self.flag_offset_y, 15+self.flag_offset_y,
-			0x9d59d2, fill=True)
-		self.screen.draw_box( # black
-			 0+self.flag_offset_x, 20+self.flag_offset_x,
-			15+self.flag_offset_y, 20+self.flag_offset_y,
-			0x000000, fill=True)
-
-	def toggle_flag(self):
-		if self.flag_toggle:
-			self.draw_trans_flag()
-		else:
-			self.draw_nb_flag()
-		self.flag_toggle = not self.flag_toggle
-
-	def move_flag_up(self):
-		self.flag_offset_y = np.clip(self.flag_offset_y-1, 1, 100)
-	def move_flag_down(self):
-		self.flag_offset_y = np.clip(self.flag_offset_y+1, 1, 100)
-	def move_flag_left(self):
-		self.flag_offset_x = np.clip(self.flag_offset_x-1, 1, 100)
-	def move_flag_right(self):
-		self.flag_offset_x = np.clip(self.flag_offset_x+1, 1, 100)
 
 	def draw_demon(self):
 		self.screen.draw_image(20, 20, "apps/doom/Cacodemon_sprite.png")
 
-
+	def draw_automap(self):
+		self.doom_engine.draw_automap()
 
 
 
@@ -233,9 +187,9 @@ class DoomGame(AppGeneric):
 		Does nothing for now
 		"""
 		while self.running.isSet():
-			# Draw the map
+			# Redraw the map every 2/30
 			self.game.doom_engine.draw_automap(self.screen)
-			time.sleep(3)
+			time.sleep(2/30)
 
 
 	################
@@ -245,19 +199,19 @@ class DoomGame(AppGeneric):
 		self.running.clear()
 
 	def handle_key_w(self):
-		self.game.move_flag_up()
+		self.game.move_forward()
 
 	def handle_key_a(self):
-		self.game.move_flag_left()
+		self.game.turn_left()
 
 	def handle_key_s(self):
-		self.game.move_flag_down()
+		self.game.move_backward()
 
 	def handle_key_d(self):
-		self.game.move_flag_right()
+		self.game.turn_right()
 
-	def handle_key_space(self):
-		self.game.toggle_flag()
+	# def handle_key_space(self):
+	# 	self.game.toggle_flag()
 
 	def handle_key_e(self):
 		self.game.draw_demon()

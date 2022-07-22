@@ -19,4 +19,4 @@ class DoomEngine:
 
 
 	def draw_automap(self, screen):
-		self.map.render_automap(screen)
+		self.map.render_automap(screen, self.player)
