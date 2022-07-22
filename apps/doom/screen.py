@@ -92,14 +92,13 @@ class Screen:
 
 	def draw_line(self, x1, x2, y1, y2, colour):
 		"""Bresenham's line algorithm from rosetta code"""
-
 		dx = abs(x2 - x1)
 		dy = abs(y2 - y1)
 
 		# TODO: If there is no gradient, just draw boxes, much quicker
 		if dx == 0 or dy == 0:
 			self.draw_box(x1, x2, y1, y2, colour, fill=True)
-			self.draw_pixel(x2, y2, colour)
+			# self.draw_pixel(x2, y2, colour)
 			return
 
 		x, y = x1, y1
@@ -129,11 +128,18 @@ class Screen:
 	def draw_box(self, x1, x2, y1, y2, colour, fill=False):
 		# Draws a filled box from (x1,y1) to (x2,y2) in a colour
 
+		# If just a single pixel
+		if x1 == x2 and y1 == y2:
+			self.draw_pixel(x1, y1, colour)
+
 		# Swapping coords if we need to to draw from top left to bot right
 		if x1 > x2:
 			x1, x2 = x2, x1
 		if y1 > y2:
 			y1, y2 = y2, y1
+
+		x2 += 1
+		y2 += 1
 
 		# If any x or y coords are the same, indexing [x:x] won't give
 		#  anything, so we need to address slightly differently
@@ -141,11 +147,11 @@ class Screen:
 			self.draw_pixel(x1,y1,colour)
 		elif x1 == x2:
 			self.pending_lock.acquire()
-			self.pending[y1:y2,x1:x1+1] = colour # Vertical line
+			self.pending[y1:y2,x1:x1] = colour # Vertical line
 			self.pending_lock.release()
 		elif y1 == y2:
 			self.pending_lock.acquire()
-			self.pending[y1:y1+1,x1:x2] = colour # Horizontal line
+			self.pending[y1:y1,x1:x2] = colour # Horizontal line
 			self.pending_lock.release()
 		elif fill:
 			self.pending_lock.acquire()
@@ -155,10 +161,10 @@ class Screen:
 			# Draw 4 boxes, one for each border
 			# TODO: Speed this up possibly?
 			self.pending_lock.acquire()
-			self.pending[y1:y1+1, x1:x2] = colour # Top
-			self.pending[y2-1:y2, x1:x2] = colour # Bottom
-			self.pending[y1:y2, x1:x1+1] = colour # Left
-			self.pending[y1:y2, x2-1:x2] = colour # Right
+			self.pending[y1:y1, x1:x2] = colour # Top
+			self.pending[y2:y2, x1:x2] = colour # Bottom
+			self.pending[y1:y2, x1:x1] = colour # Left
+			self.pending[y1:y2, x2:x2] = colour # Right
 			self.pending_lock.release()
 
 

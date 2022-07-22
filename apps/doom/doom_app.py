@@ -26,11 +26,10 @@ class Game:
 		self.flag_offset_y = 1
 
 		self.flag_toggle = False
-		self.draw_trans_flag()
+		# self.draw_trans_flag()
 
-		# Start doom and draw map
-		doom = DoomEngine()
-		doom.draw_automap(self.screen)
+		# Start doom engine
+		self.doom_engine = DoomEngine()
 
 
 	def draw_trans_flag(self):
@@ -234,9 +233,9 @@ class DoomGame(AppGeneric):
 		Does nothing for now
 		"""
 		while self.running.isSet():
-			time.sleep(1)
-			# self.game.toggle_flag()
-			# time.sleep(2/30)
+			# Draw the map
+			self.game.doom_engine.draw_automap(self.screen)
+			time.sleep(3)
 
 
 	################

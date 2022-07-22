@@ -1,7 +1,11 @@
 
+import random
+import time
+
 from apps.doom.helpers import *
 
 class Map:
+
 	def __init__(self, name, players):
 		self.name = name
 		self.players = players
@@ -10,8 +14,8 @@ class Map:
 		self.linedefs = []
 		self.sidedefs = None
 		self.vertexes = []
-		self.segs = None
-		self.ssectors = None
+		self.segs = []
+		self.subsectors = []
 		self.nodes = []
 		self.sectors = None
 		self.reject = None
@@ -21,6 +25,52 @@ class Map:
 		self.x_offset = 0
 		self.y_offset = 0
 		self.scale_factor = 1
+
+
+	def is_point_on_left_side(self, x, y, node_id):
+		dx = x - self.nodes[node_id].x_partition
+		dy = y - self.nodes[node_id].y_partition
+		return (
+			(dx * self.nodes[node_id].dy_partition)
+			- (dy * self.nodes[node_id].dx_partition)
+		) <= 0
+	def render_bsp_nodes(self, screen, node_id=None):
+		# If node id unspecified, start from the root node
+		if node_id  == None:
+			return self.render_bsp_nodes(screen, len(self.nodes)-1)
+
+		# Mask all bits except the last one to check if this is a
+		#  subsector
+		if node_id & 0x8000:
+			self.render_subsector(screen, node_id & (~0x8000))
+			return
+
+		# Get position of the first player
+		x, y = self.players[0].x, self.players[0].y
+
+		if self.is_point_on_left_side(x, y, node_id):
+			self.render_bsp_nodes(screen, self.nodes[node_id].l_child)
+			self.render_bsp_nodes(screen, self.nodes[node_id].r_child)
+		else:
+			self.render_bsp_nodes(screen, self.nodes[node_id].r_child)
+			self.render_bsp_nodes(screen, self.nodes[node_id].l_child)
+
+	def render_subsector(self, screen, subsector_id):
+		subsector = self.subsectors[subsector_id]
+
+		for i in range(subsector.seg_count):
+			seg = self.segs[subsector.first_seg_id + i]
+			start_vertex = self.vertexes[seg.start_vertex]
+			end_vertex   = self.vertexes[seg.end_vertex]
+
+			screen.draw_line(
+				self.remap_x_to_screen(start_vertex.x),
+				self.remap_x_to_screen(end_vertex.x),
+				self.remap_y_to_screen(start_vertex.y),
+				self.remap_y_to_screen(end_vertex.y),
+				random.randint(0,0x1000000))
+			# time.sleep(0.01)
+
 
 
 	def update_offset_and_scale(self, screen):
@@ -39,15 +89,12 @@ class Map:
 
 		# Get the screen size so we can draw not upside down
 		self.screen_height = screen.height - 1 # -1 bc pixels indexed at 0
-
-
 	def remap_x_to_screen(self, x):
 		postscale_x_offset = 0
 		return (x + self.x_offset)//self.scale_factor + postscale_x_offset
 	def remap_y_to_screen(self, y):
 		postscale_y_offset = 0
 		return self.screen_height - (y + self.y_offset)//self.scale_factor + postscale_y_offset
-
 
 	def render_automap(self, screen):
 		self.update_offset_and_scale(screen)
@@ -58,7 +105,8 @@ class Map:
 		self.render_automap_things(screen)
 		self.render_automap_node(screen)
 
-
+		# Render the subsectors in order
+		self.render_bsp_nodes(screen)
 	def render_automap_lines(self, screen):
 		# Draw all the lines!
 		for l in self.linedefs:
@@ -70,7 +118,6 @@ class Map:
 				self.remap_y_to_screen(start_vertex.y),
 				self.remap_y_to_screen(end_vertex.y),
 				0xffffff)
-
 	def render_automap_players(self, screen):
 		# Draw the players!
 		for p in self.players:
@@ -80,7 +127,6 @@ class Map:
 				self.remap_y_to_screen(p.y),
 				self.remap_y_to_screen(p.y),
 				0xff0000)
-
 	def render_automap_things(self, screen):
 		# Draw the things!
 		for t in self.things:
@@ -90,7 +136,6 @@ class Map:
 				self.remap_y_to_screen(t.y),
 				self.remap_y_to_screen(t.y),
 				0xff00ff)
-
 	def render_automap_node(self, screen):
 		# Draw the root node's splitter and boxes
 		n = self.nodes[-1]
@@ -138,7 +183,6 @@ class Map:
 						p.update_from_thing(thing)
 			else:
 				self.things.append(thing)
-
 	def load_linedefs(self, data):
 		# Each linedef is 14 bytes
 		for i in range(0, len(data), 14):
@@ -151,10 +195,8 @@ class Map:
 				right_sidedef = read_uint16(data, i+10),
 				left_sidedef  = read_uint16(data, i+12))
 			self.linedefs.append(linedef)
-
 	def load_sidedefs(self, data):
 		...
-
 	def load_vertexes(self, data):
 		# Each vertex is 4 bytes
 		for i in range(0, len(data), 4):
@@ -162,12 +204,25 @@ class Map:
 				x = read_int16(data, i),
 				y = read_int16(data, i+2))
 			self.vertexes.append(vertex)
-
 	def load_segs(self, data):
-		...
+		# Each seg is 12 bytes
+		for i in range(0, len(data), 12):
+			seg = Map_Seg(
+				start_vertex = read_uint16(data, i),
+				end_vertex   = read_uint16(data, i+2),
+				angle        = read_uint16(data, i+4),
+				linedef_id   = read_uint16(data, i+6),
+				direction    = read_uint16(data, i+8),
+				offset       = read_uint16(data, i+10))
+			self.segs.append(seg)
 
 	def load_ssectors(self, data):
-		...
+		# Each subsector is 4 bytes
+		for i in range(0, len(data), 4):
+			subsector = Map_Subsector(
+				seg_count    = read_uint16(data, i),
+				first_seg_id = read_uint16(data, i+2))
+			self.subsectors.append(subsector)
 
 	def load_nodes(self, data):
 		# Each node is 28 bytes
@@ -188,27 +243,25 @@ class Map:
 				r_child      = read_uint16(data, i+24),
 				l_child      = read_uint16(data, i+26))
 			self.nodes.append(node)
-
 	def load_sectors(self, data):
 		...
-
 	def load_reject(self, data):
 		...
-
 	def load_blockmap(self, data):
 		...
+
 
 	def __repr__(self):
 		return (
 			f"<Map {self.name}: "
 			+ f"{len(self.players)} players, "
-			+ f"0 things, "
+			+ f"{len(self.things)} things, "
 			+ f"{len(self.linedefs)} linedefs, "
 			+ f"0 sidedefs, "
 			+ f"{len(self.vertexes)} vertexes, "
-			+ f"0 segs, "
-			+ f"0 ssectors, "
-			+ f"0 nodes, "
+			+ f"{len(self.segs)} segs, "
+			+ f"{len(self.subsectors)} ssectors, "
+			+ f"{len(self.nodes)} nodes, "
 			+ f"0 sectors, "
 			+ f"0 reject, "
 			+ f"0 blockmap>")
@@ -235,12 +288,32 @@ class Map_Linedef:
 		self.right_sidedef = right_sidedef
 		self.left_sidedef = left_sidedef
 
+class Map_SideDef:
+	...
+
 class Map_Vertex:
 	def __init__(self, x, y):
 		self.x = x
 		self.y = y
 	def __repr__(self):
 		return f"<Vertex: ({self.x},{self.y})>"
+
+class Map_Seg:
+	def __init__(self,
+		start_vertex, end_vertex, angle,
+		linedef_id, direction, offset
+	):
+		self.start_vertex = start_vertex
+		self.end_vertex = end_vertex
+		self.angle = angle
+		self.linedef_id = linedef_id
+		self.direction = direction
+		self.offset = offset
+
+class Map_Subsector:
+	def __init__(self, seg_count, first_seg_id):
+		self.seg_count = seg_count
+		self.first_seg_id = first_seg_id
 
 class Map_Node:
 	def __init__(self,
@@ -263,3 +336,6 @@ class Map_Node:
 		self.lbox_r = lbox_r
 		self.r_child = r_child
 		self.l_child = l_child
+
+class Map_Sector:
+	...
