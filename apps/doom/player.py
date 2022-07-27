@@ -35,11 +35,9 @@ class Player:
 	def turn_right(self):
 		self.angle -= TURN_SPEED
 	def move_forward(self):
-		print(self.angle)
 		self.x += math.cos(self.angle.angle * math.pi/180) * MOVE_SPEED
 		self.y += math.sin(self.angle.angle * math.pi/180) * MOVE_SPEED
 	def move_backward(self):
-		print(self.angle)
 		self.x -= math.cos(self.angle.angle * math.pi/180) * MOVE_SPEED
 		self.y -= math.sin(self.angle.angle * math.pi/180)  * MOVE_SPEED
 

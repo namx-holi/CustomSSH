@@ -146,7 +146,6 @@ class DoomGame(AppGeneric):
 			elif key == b"a": self.handle_key_a()
 			elif key == b"s": self.handle_key_s()
 			elif key == b"d": self.handle_key_d()
-			elif key == b" ": self.handle_key_space()
 			elif key == b"e": self.handle_key_e()
 
 			# Unbound keys
@@ -209,9 +208,6 @@ class DoomGame(AppGeneric):
 
 	def handle_key_d(self):
 		self.game.turn_right()
-
-	# def handle_key_space(self):
-	# 	self.game.toggle_flag()
 
 	def handle_key_e(self):
 		self.game.draw_demon()

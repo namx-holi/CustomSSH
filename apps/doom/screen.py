@@ -138,8 +138,9 @@ class Screen:
 		if y1 > y2:
 			y1, y2 = y2, y1
 
-		x2 += 1
-		y2 += 1
+		# Box is inclusive of coords. TODO: Verify this?
+		# x2 += 1
+		# y2 += 1
 
 		# If any x or y coords are the same, indexing [x:x] won't give
 		#  anything, so we need to address slightly differently
@@ -147,11 +148,11 @@ class Screen:
 			self.draw_pixel(x1,y1,colour)
 		elif x1 == x2:
 			self.pending_lock.acquire()
-			self.pending[y1:y2,x1:x1] = colour # Vertical line
+			self.pending[y1:y2+1,x1:x1+1] = colour # Vertical line
 			self.pending_lock.release()
 		elif y1 == y2:
 			self.pending_lock.acquire()
-			self.pending[y1:y1,x1:x2] = colour # Horizontal line
+			self.pending[y1:y1+1,x1:x2+1] = colour # Horizontal line
 			self.pending_lock.release()
 		elif fill:
 			self.pending_lock.acquire()
@@ -161,10 +162,10 @@ class Screen:
 			# Draw 4 boxes, one for each border
 			# TODO: Speed this up possibly?
 			self.pending_lock.acquire()
-			self.pending[y1:y1, x1:x2] = colour # Top
-			self.pending[y2:y2, x1:x2] = colour # Bottom
-			self.pending[y1:y2, x1:x1] = colour # Left
-			self.pending[y1:y2, x2:x2] = colour # Right
+			self.pending[y1:y1+1, x1:x2] = colour # Top
+			self.pending[y2-1:y2, x1:x2] = colour # Bottom
+			self.pending[y1:y2, x1:x1+1] = colour # Left
+			self.pending[y1:y2, x2-1:x2] = colour # Right
 			self.pending_lock.release()
 
 
