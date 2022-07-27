@@ -29,7 +29,7 @@ class Game:
 		# self.draw_trans_flag()
 
 		# Start doom engine
-		self.doom_engine = DoomEngine()
+		self.doom_engine = DoomEngine(screen)
 
 	def turn_left(self):
 		self.doom_engine.player.turn_left()

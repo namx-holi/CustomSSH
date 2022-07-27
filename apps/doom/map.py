@@ -53,123 +53,133 @@ class Map:
 		return self.screen_height - (y + self.y_offset)//self.scale_factor + postscale_y_offset
 
 
-	# Rendering methods
-	def render_automap(self, screen, player):
-		self.update_offset_and_scale(screen)
+	"""
+	All this code has migrated to renderer.py. Leaving here for now as
+	a reference
 
-		# Draw the map!
-		self.render_automap_lines(screen)
-		self.render_automap_player(screen, player)
-		self.render_automap_things(screen)
-		self.render_automap_node(screen)
+		# # Rendering methods
+		# def render_automap(self, screen, player):
+		# 	self.update_offset_and_scale(screen)
 
-		# Render the subsectors in order
-		self.render_bsp_nodes(screen, player)
+		# 	# Draw the map!
+		# 	self.render_automap_lines(screen)
+		# 	self.render_automap_player(screen, player)
+		# 	self.render_automap_things(screen)
+		# 	self.render_automap_node(screen)
 
-	def render_automap_lines(self, screen):
-		# Draw all the lines!
-		for l in self.linedefs:
-			start_vertex = self.vertexes[l.start_vertex]
-			end_vertex   = self.vertexes[l.end_vertex]
-			screen.draw_line(
-				self.remap_x_to_screen(start_vertex.x),
-				self.remap_x_to_screen(end_vertex.x),
-				self.remap_y_to_screen(start_vertex.y),
-				self.remap_y_to_screen(end_vertex.y),
-				0x444444)
+		# 	# Render the subsectors in order
+		# 	self.render_bsp_nodes(screen, player)
 
-	def render_automap_player(self, screen, player):
-		# Draw the given player!
-		screen.draw_box(
-			self.remap_x_to_screen(player.x),
-			self.remap_x_to_screen(player.x),
-			self.remap_y_to_screen(player.y),
-			self.remap_y_to_screen(player.y),
-			0xff0000)
+		# def render_automap_lines(self, screen):
+		# 	# Draw all the lines!
+		# 	for l in self.linedefs:
+		# 		start_vertex = self.vertexes[l.start_vertex]
+		# 		end_vertex   = self.vertexes[l.end_vertex]
+		# 		screen.draw_line(
+		# 			self.remap_x_to_screen(start_vertex.x),
+		# 			self.remap_x_to_screen(end_vertex.x),
+		# 			self.remap_y_to_screen(start_vertex.y),
+		# 			self.remap_y_to_screen(end_vertex.y),
+		# 			0x444444)
 
-	def render_automap_things(self, screen):
-		# Draw the things!
-		for t in self.things:
-			screen.draw_box(
-				self.remap_x_to_screen(t.x),
-				self.remap_x_to_screen(t.x),
-				self.remap_y_to_screen(t.y),
-				self.remap_y_to_screen(t.y),
-				0xff00ff)
+		# def render_automap_player(self, screen, player):
+		# 	# Draw the given player!
+		# 	screen.draw_box(
+		# 		self.remap_x_to_screen(player.x),
+		# 		self.remap_x_to_screen(player.x),
+		# 		self.remap_y_to_screen(player.y),
+		# 		self.remap_y_to_screen(player.y),
+		# 		0xff0000)
 
-	def render_automap_node(self, screen):
-		# Draw the root node's splitter and boxes
-		n = self.nodes[-1]
+		# def render_automap_things(self, screen):
+		# 	# Draw the things!
+		# 	for t in self.things:
+		# 		screen.draw_box(
+		# 			self.remap_x_to_screen(t.x),
+		# 			self.remap_x_to_screen(t.x),
+		# 			self.remap_y_to_screen(t.y),
+		# 			self.remap_y_to_screen(t.y),
+		# 			0xff00ff)
 
-		# Right box
-		screen.draw_box(
-			self.remap_x_to_screen(n.rbox_l),
-			self.remap_x_to_screen(n.rbox_r) + 1,
-			self.remap_y_to_screen(n.rbox_t),
-			self.remap_y_to_screen(n.rbox_b) + 1,
-			0x00ff00) # This is fine
+		# def render_automap_node(self, screen):
+		# 	# Draw the root node's splitter and boxes
+		# 	n = self.nodes[-1]
 
-		# Left box
-		screen.draw_box(
-			self.remap_x_to_screen(n.lbox_l),
-			self.remap_x_to_screen(n.lbox_r) + 1,
-			self.remap_y_to_screen(n.lbox_t),
-			self.remap_y_to_screen(n.lbox_b) + 1,
-			0xff0000)
+		# 	# Right box
+		# 	screen.draw_box(
+		# 		self.remap_x_to_screen(n.rbox_l),
+		# 		self.remap_x_to_screen(n.rbox_r) + 1,
+		# 		self.remap_y_to_screen(n.rbox_t),
+		# 		self.remap_y_to_screen(n.rbox_b) + 1,
+		# 		0x00ff00) # This is fine
 
-		# Draw the splitter
-		screen.draw_box(
-			self.remap_x_to_screen(n.x_partition),
-			self.remap_x_to_screen(n.x_partition + n.dx_partition),
-			self.remap_y_to_screen(n.y_partition),
-			self.remap_y_to_screen(n.y_partition + n.dy_partition),
-			0x0000ff)
+		# 	# Left box
+		# 	screen.draw_box(
+		# 		self.remap_x_to_screen(n.lbox_l),
+		# 		self.remap_x_to_screen(n.lbox_r) + 1,
+		# 		self.remap_y_to_screen(n.lbox_t),
+		# 		self.remap_y_to_screen(n.lbox_b) + 1,
+		# 		0xff0000)
 
-	def is_point_on_left_side(self, x, y, node_id):
-		dx = x - self.nodes[node_id].x_partition
-		dy = y - self.nodes[node_id].y_partition
-		return (
-			(dx * self.nodes[node_id].dy_partition)
-			- (dy * self.nodes[node_id].dx_partition)
-		) <= 0
-	def render_bsp_nodes(self, screen, player, node_id=None):
-		# If node id unspecified, start from the root node
-		if node_id  == None:
-			return self.render_bsp_nodes(screen, player, len(self.nodes)-1)
+		# 	# Draw the splitter
+		# 	screen.draw_box(
+		# 		self.remap_x_to_screen(n.x_partition),
+		# 		self.remap_x_to_screen(n.x_partition + n.dx_partition),
+		# 		self.remap_y_to_screen(n.y_partition),
+		# 		self.remap_y_to_screen(n.y_partition + n.dy_partition),
+		# 		0x0000ff)
 
-		# Mask all bits except the last one to check if this is a
-		#  subsector
-		if node_id & 0x8000:
-			self.render_subsector(screen, player, node_id & (~0x8000))
-			return
+		# def is_point_on_left_side(self, x, y, node_id):
+		# 	dx = x - self.nodes[node_id].x_partition
+		# 	dy = y - self.nodes[node_id].y_partition
+		# 	return (
+		# 		(dx * self.nodes[node_id].dy_partition)
+		# 		- (dy * self.nodes[node_id].dx_partition)
+		# 	) <= 0
+		# def render_bsp_nodes(self, screen, player, node_id=None):
+		# 	# If node id unspecified, start from the root node
+		# 	if node_id  == None:
+		# 		return self.render_bsp_nodes(screen, player, len(self.nodes)-1)
 
-		# Get position of the first player
-		x, y = self.players[0].x, self.players[0].y
+		# 	# Mask all bits except the last one to check if this is a
+		# 	#  subsector
+		# 	if node_id & 0x8000:
+		# 		self.render_subsector(screen, player, node_id & (~0x8000))
+		# 		return
 
-		if self.is_point_on_left_side(x, y, node_id):
-			self.render_bsp_nodes(screen, player, self.nodes[node_id].l_child)
-			self.render_bsp_nodes(screen, player, self.nodes[node_id].r_child)
-		else:
-			self.render_bsp_nodes(screen, player, self.nodes[node_id].r_child)
-			self.render_bsp_nodes(screen, player, self.nodes[node_id].l_child)
-	def render_subsector(self, screen, player, subsector_id):
-		subsector = self.subsectors[subsector_id]
+		# 	# Get position of the first player
+		# 	x, y = self.players[0].x, self.players[0].y
 
-		for i in range(subsector.seg_count):
-			seg = self.segs[subsector.first_seg_id + i]
+		# 	if self.is_point_on_left_side(x, y, node_id):
+		# 		self.render_bsp_nodes(screen, player, self.nodes[node_id].l_child)
+		# 		self.render_bsp_nodes(screen, player, self.nodes[node_id].r_child)
+		# 	else:
+		# 		self.render_bsp_nodes(screen, player, self.nodes[node_id].r_child)
+		# 		self.render_bsp_nodes(screen, player, self.nodes[node_id].l_child)
+		# def render_subsector(self, screen, player, subsector_id):
+		# 	subsector = self.subsectors[subsector_id]
 
-			vertexes = player.clip_vertexes_in_fov(
-				self.vertexes[seg.start_vertex],
-				self.vertexes[seg.end_vertex])
-			if vertexes:
-				screen.draw_line(
-					self.remap_x_to_screen(self.vertexes[seg.start_vertex].x),
-					self.remap_x_to_screen(self.vertexes[seg.end_vertex].x),
-					self.remap_y_to_screen(self.vertexes[seg.start_vertex].y),
-					self.remap_y_to_screen(self.vertexes[seg.end_vertex].y),
-					# random.randint(0,0x1000000))
-					0xffffff)
-				# time.sleep(0.01)
+		# 	for i in range(subsector.seg_count):
+		# 		seg = self.segs[subsector.first_seg_id + i]
+
+		# 		renderer = Renderer(None, player, None)
+		# 		vertexes = renderer._wall_is_visible(
+		# 			v1=self.vertexes[seg.start_vertex],
+		# 			v2=self.vertexes[seg.end_vertex])
+
+		# 		# vertexes = player.clip_vertexes_in_fov(
+		# 		# 	self.vertexes[seg.start_vertex],
+		# 		# 	self.vertexes[seg.end_vertex])
+		# 		if vertexes:
+		# 			screen.draw_line(
+		# 				self.remap_x_to_screen(self.vertexes[seg.start_vertex].x),
+		# 				self.remap_x_to_screen(self.vertexes[seg.end_vertex].x),
+		# 				self.remap_y_to_screen(self.vertexes[seg.start_vertex].y),
+		# 				self.remap_y_to_screen(self.vertexes[seg.end_vertex].y),
+		# 				# random.randint(0,0x1000000))
+		# 				0xffffff)
+		# 			# time.sleep(0.01)
+	"""
 
 
 	# TODO: Move load_ methods elsewhere?

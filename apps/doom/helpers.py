@@ -23,7 +23,8 @@ class Angle:
 
 	@staticmethod
 	def _normalise_angle(angle):
-		return int(angle % 360)
+		# return int(angle % 360)
+		return angle % 360
 
 	# Comparison
 	def __lt__(self, other): # a < b
