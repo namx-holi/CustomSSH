@@ -108,12 +108,19 @@ class Renderer:
 				v1=self.map.vertexes[seg.start_vertex],
 				v2=self.map.vertexes[seg.end_vertex]
 			):
-				self.screen.draw_line(
+				# Draw the wall projection
+				self._project_wall(
+					screen,
+					self.map.vertexes[seg.start_vertex],
+					self.map.vertexes[seg.end_vertex])
+
+				# Draw the automap on top
+				screen.draw_line(
 					self.remap_automap_x_to_screen(self.map.vertexes[seg.start_vertex].x),
 					self.remap_automap_x_to_screen(self.map.vertexes[seg.end_vertex].x),
 					self.remap_automap_y_to_screen(self.map.vertexes[seg.start_vertex].y),
 					self.remap_automap_y_to_screen(self.map.vertexes[seg.end_vertex].y),
-					0xffffff)
+					0x0000ff)
 
 	def _is_point_on_left_side(self, x, y, node_id):
 		# Checks if the given point is on the left partition of the
@@ -159,3 +166,88 @@ class Renderer:
 			return False
 
 		return True
+
+
+	def _project_wall_old(self, screen, v1, v2):
+		# Calculate the angles to v1 and v2 relative to player
+		V1 = self._player_rel_angle(v1)
+		V2 = self._player_rel_angle(v2)
+
+		# Precalculate the screen distance from triangle made by FOV and
+		#  the screen width
+		R = self.screen.width/(2*np.tan(np.deg2rad(self.player.fov.angle/2)))
+
+		# Calculate A (how far left of center screen V1 is)
+		A = R * np.tan(np.deg2rad(V1))
+		# Calculate B (how far right of center screen V2 is)
+		B = R * np.tan(np.deg2rad(V2))
+
+		# Calculate the actual screen positions and draw wall
+		A_screen = int(round(self.screen.width/2 - A))
+		B_screen = int(round(self.screen.width/2 + B))
+
+		# TODO: Remove
+		# Calculate how far the closest bit of the wall is
+		v1_dist = ((v1.x - self.player.x)**2 + (v1.y - self.player.y)**2)**0.5
+		v2_dist = ((v2.x - self.player.x)**2 + (v2.y - self.player.y)**2)**0.5
+		dist = min(v1_dist, v2_dist)
+		FOG_DIST = 1000 # Past this dist is black
+		colour_percentage = 1 - np.clip(dist, 0, FOG_DIST)/FOG_DIST
+		brightness = int(colour_percentage * 0xff)
+		colour = brightness * 0x10101 # Turn into a grey
+
+		screen.draw_box(
+			x1=A_screen, x2=B_screen,
+			y1=50, y2=150,
+			colour=colour, fill=True)
+
+
+	def _project_wall(self, screen, v1, v2):
+		# Calculate the angles to v1 and v2 relative to player
+		V1 = self._player_rel_angle(v1)
+		V2 = self._player_rel_angle(v2)
+		# print(f"V1={V1}, V2={V2}")
+
+		# Clip the angles so they are in FOV
+		half_fov = self.player.fov.angle / 2
+		V1 = np.clip(V1, -half_fov, half_fov)
+		V2 = np.clip(V2, -half_fov, half_fov)
+
+		# Calculate projection screen distance in units from the player
+		screen_dist = self.screen.width / (2 * np.tan(np.deg2rad(half_fov)))
+
+		def _angle_to_screen(angle):
+			ix = 0
+			# TODO: Why does this work ?????
+			if angle < 90:
+				# Left side
+				ix = self.screen.width/2 - round(np.tan(np.deg2rad(angle)) * screen_dist)
+			else:
+				# Right side
+				ix = round(np.tan(np.deg2rad(angle)) * screen_dist)
+				ix += self.screen.width/2
+			return int(ix)
+
+		V1_x = _angle_to_screen(V1)
+		V2_x = _angle_to_screen(V2)
+
+		# TODO: Remove
+		# Calculate how far the closest bit of the wall is
+		# v1_dist = ((v1.x - self.player.x)**2 + (v1.y - self.player.y)**2)**0.5
+		# v2_dist = ((v2.x - self.player.x)**2 + (v2.y - self.player.y)**2)**0.5
+		# dist = min(v1_dist, v2_dist)
+		# Calculate the dist from midpoint of the wall
+		mid_x = (v1.x + v2.x)/2
+		mid_y = (v1.y + v2.y)/2
+		dist = ((mid_x - self.player.x)**2 + (mid_y - self.player.y)**2)**0.5
+		FOG_DIST = 1000 # Past this dist is black
+		colour_percentage = 1 - np.clip(dist, 0, FOG_DIST)/FOG_DIST
+		# Do some maths so that far away looks a lot further away. ie non linear brightness
+		colour_percentage = colour_percentage ** 4
+		brightness = int(colour_percentage * 0xff)
+		colour = brightness * 0x10101 # Turn into a grey
+
+		screen.draw_box(
+			V1_x, V2_x, 50, 150,
+			colour=colour, fill=True)
+
