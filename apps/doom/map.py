@@ -167,7 +167,7 @@ class Map_Linedef:
 			self.right_sidedef = sidedefs[wad_linedef.right_sidedef]
 		else:
 			self.right_sidedef = None
-
+		
 		if wad_linedef.left_sidedef != 0xffff:
 			self.left_sidedef = sidedefs[wad_linedef.left_sidedef]
 		else:
@@ -177,10 +177,24 @@ class Map_Seg:
 	def __init__(self, wad_seg, vertexes, linedefs):
 		self.start_vertex = vertexes[wad_seg.start_vertex]
 		self.end_vertex = vertexes[wad_seg.end_vertex]
-		self.angle = wad_seg.angle
+		self.angle = wad_seg.angle # TODO: Slope angle
 		self.linedef = linedefs[wad_seg.linedef_id]
 		self.direction = wad_seg.direction
-		self.offset = wad_seg.offset
+		self.offset = wad_seg.offset # TODO: Convert
+
+		self.right_sidedef = self.linedef.right_sidedef
+		self.left_sidedef = self.linedef.left_sidedef
+		
+		if self.right_sidedef:
+			self.right_sector = self.right_sidedef.sector
+		else:
+			self.right_sector = None
+		
+		if self.left_sidedef:
+			self.left_sector = self.left_sidedef.sector
+		else:
+			self.left_sector = None
+
 
 class Map_Subsector:
 	def __init__(self, wad_subsector, segs):

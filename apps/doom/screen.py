@@ -68,21 +68,26 @@ class Batch:
 	def draw(self):
 		# TODO: Is there a reason why a batch can't be sent to a screen
 		#  more than once?
-		if self.sent:
-			print("Batch already sent to screen")
-			return
-		self.sent = True
+		# if self.sent:
+		# 	print("Batch already sent to screen")
+		# 	return
+		# self.sent = True
 
 		# Sends all the updates to the screen
 		self.screen.draw_batch(self)
 
 
 	# TODO: Move these draw methods somewhere else that can be inherited
-	def draw_pixel(self, x, y, colour):
+	def draw_pixel(self, x, y, colour, under=False):
 		# Don't draw if out of screen range
 		if x < 0 or x >= self.width:
 			return
 		if y < 0 or y >= self.height:
+			return
+
+		# If drawing pixel under, only fill if the pixel has not already
+		#  been set
+		if under and self.pending[y,x] == self.NO_CHANGE:
 			return
 
 		# Sets one pixel in the pending view
@@ -124,12 +129,12 @@ class Batch:
 		self.draw_pixel(x, y, colour)
 
 
-	def draw_box(self, x1, x2, y1, y2, colour, fill=False):
+	def draw_box(self, x1, x2, y1, y2, colour, fill=False, under=False):
 		# Draws a filled box from (x1,y1) to (x2,y2) in a colour
 
 		# If just a single pixel
 		if x1 == x2 and y1 == y2:
-			self.draw_pixel(x1, y1, colour)
+			self.draw_pixel(x1, y1, colour, under=under)
 
 		# Swapping coords if we need to to draw from top left to bot right
 		if x1 > x2:
@@ -144,20 +149,50 @@ class Batch:
 		# If any x or y coords are the same, indexing [x:x] won't give
 		#  anything, so we need to address slightly differently
 		if x1 == x2 and y1 == y2:
-			self.draw_pixel(x1,y1,colour)
+			self.draw_pixel(x1, y1, colour, under=under)
 		elif x1 == x2:
-			self.pending[y1:y2+1,x1:x1+1] = colour # Vertical line
+			draw_region = self.pending[y1:y2+1,x1:x1+1]
+			if under:
+				draw_region[draw_region == self.NO_CHANGE] = colour
+			else:
+				draw_region[:] = colour
+			# self.pending[y1:y2+1,x1:x1+1] = colour # Vertical line
+
 		elif y1 == y2:
-			self.pending[y1:y1+1,x1:x2+1] = colour # Horizontal line
+			draw_region = self.pending[y1:y1+1,x1:x2+1]
+			if under:
+				draw_region[draw_region == self.NO_CHANGE] = colour
+			else:
+				draw_region[:] = colour
+			# self.pending[y1:y1+1,x1:x2+1] = colour # Horizontal line
+
 		elif fill:
-			self.pending[y1:y2, x1:x2] = colour # Actual box
+			draw_region = self.pending[y1:y2+1, x1:x2+1]
+			if under:
+				draw_region[draw_region == self.NO_CHANGE] = colour
+			else:
+				draw_region[:] = colour
+			# self.pending[y1:y2, x1:x2] = colour # Actual box
+
 		else:
 			# Draw 4 boxes, one for each border
-			# TODO: Speed this up possibly?
-			self.pending[y1:y1+1, x1:x2] = colour # Top
-			self.pending[y2-1:y2, x1:x2] = colour # Bottom
-			self.pending[y1:y2, x1:x1+1] = colour # Left
-			self.pending[y1:y2, x2-1:x2] = colour # Right
+			draw_region = self.pending[y1:y2+1, x1:x2+1]
+			center_space = draw_region[1:-1, 1:-1].copy()
+
+			if under:
+				draw_region[draw_region == self.NO_CHANGE] = colour
+			else:
+				draw_region[:] = colour
+
+			# Restore the center space
+			draw_region[1:-1, 1:-1] = center_space
+
+			# # Draw 4 boxes, one for each border
+			# # TODO: Speed this up possibly?
+			# self.pending[y1:y1+1, x1:x2] = colour # Top
+			# self.pending[y2-1:y2, x1:x2] = colour # Bottom
+			# self.pending[y1:y2, x1:x1+1] = colour # Left
+			# self.pending[y1:y2, x2-1:x2] = colour # Right
 
 
 	def draw_image(self, x, y, filename):
@@ -195,10 +230,6 @@ class Batch:
 		# Draw the visible pixels to canvas
 		# self.pending[scr_y1:scr_y2,scr_x1:scr_x2] = pixels[img_y1:img_y2,img_x1:img_x2]
 		self.pending[scr_y1:scr_y2,scr_x1:scr_x2][visible] = pixels[img_y1:img_y2,img_x1:img_x2][visible]
-
-
-
-
 
 
 
@@ -248,134 +279,27 @@ class Screen:
 
 
 	def draw_pixel(self, x, y, colour):
-		# Don't draw if out of screen range
-		if x < 0 or x >= self.width:
-			return
-		if y < 0 or y >= self.height:
-			return
-
-		# Sets one pixel in the pending view
-		self.pending_lock.acquire()
-		self.pending[y,x] = colour
-		self.pending_lock.release()
+		batch = self.new_batch()
+		batch.draw_pixel(x, y, colour)
+		batch.draw()
 
 
 	def draw_line(self, x1, x2, y1, y2, colour):
-		"""Bresenham's line algorithm from rosetta code"""
-		dx = abs(x2 - x1)
-		dy = abs(y2 - y1)
-
-		# TODO: If there is no gradient, just draw boxes, much quicker
-		if dx == 0 or dy == 0:
-			self.draw_box(x1, x2, y1, y2, colour, fill=True)
-			# self.draw_pixel(x2, y2, colour)
-			return
-
-		x, y = x1, y1
-		sx = -1 if x1 > x2 else 1
-		sy = -1 if y1 > y2 else 1
-		if dx > dy:
-			err = dx / 2.0
-			while x != x2:
-				self.draw_pixel(x, y, colour)
-				err -= dy
-				if err < 0:
-					y += sy
-					err += dx
-				x += sx
-		else:
-			err = dy / 2.0
-			while y != y2:
-				self.draw_pixel(x, y, colour)
-				err -= dx
-				if err < 0:
-					x += sx
-					err += dy
-				y += sy
-		self.draw_pixel(x, y, colour)
+		batch = self.new_batch()
+		batch.draw_line(x1, x2, y1, y2, colour)
+		batch.draw()
 
 
-	def draw_box(self, x1, x2, y1, y2, colour, fill=False):
-		# Draws a filled box from (x1,y1) to (x2,y2) in a colour
-
-		# If just a single pixel
-		if x1 == x2 and y1 == y2:
-			self.draw_pixel(x1, y1, colour)
-
-		# Swapping coords if we need to to draw from top left to bot right
-		if x1 > x2:
-			x1, x2 = x2, x1
-		if y1 > y2:
-			y1, y2 = y2, y1
-
-		# Box is inclusive of coords. TODO: Verify this?
-		# x2 += 1
-		# y2 += 1
-
-		# If any x or y coords are the same, indexing [x:x] won't give
-		#  anything, so we need to address slightly differently
-		if x1 == x2 and y1 == y2:
-			self.draw_pixel(x1,y1,colour)
-		elif x1 == x2:
-			self.pending_lock.acquire()
-			self.pending[y1:y2+1,x1:x1+1] = colour # Vertical line
-			self.pending_lock.release()
-		elif y1 == y2:
-			self.pending_lock.acquire()
-			self.pending[y1:y1+1,x1:x2+1] = colour # Horizontal line
-			self.pending_lock.release()
-		elif fill:
-			self.pending_lock.acquire()
-			self.pending[y1:y2, x1:x2] = colour # Actual box
-			self.pending_lock.release()
-		else:
-			# Draw 4 boxes, one for each border
-			# TODO: Speed this up possibly?
-			self.pending_lock.acquire()
-			self.pending[y1:y1+1, x1:x2] = colour # Top
-			self.pending[y2-1:y2, x1:x2] = colour # Bottom
-			self.pending[y1:y2, x1:x1+1] = colour # Left
-			self.pending[y1:y2, x2-1:x2] = colour # Right
-			self.pending_lock.release()
+	def draw_box(self, x1, x2, y1, y2, colour, fill=False, under=False):
+		batch = self.new_batch()
+		batch.draw_box(x1, x2, y1, y2, colour, fill, under)
+		batch.draw()
 
 
 	def draw_image(self, x, y, filename):
-		# Loads an image and draws it to canvas with top left corner at
-		#  the given coordinate
-		img = cv2.imread(filename, cv2.IMREAD_UNCHANGED) # unchanged for alpha channel
-		height, width, _ = img.shape
-
-		# Combine the RGB channels into one hex number
-		pixels = img[:,:,2]*0x10000 + img[:,:,1]*0x100 + img[:,:,0]
-
-		# Extract only non transparent pixels
-		visible = img[:,:,3] > 0
-
-		# Calculate overlap of the image with the screen borders
-		l_overlap = -min(0, x)
-		r_overlap = max(0, x + width - self.width)
-		t_overlap = -min(0, y)
-		b_overlap = max(0, y + height - self.height)
-
-		# Calculate the region of screen space that is going to be drawn
-		#  to, and the region of the image that is to be drawn
-		img_x1 = l_overlap # Start from what doesn't left overlap
-		img_x2 = width - r_overlap # Cut off right overlap
-		img_y1 = t_overlap # Start from what doesn't top overlap
-		img_y2 = height - b_overlap # Cut off bottom overlap
-		scr_x1 = x + l_overlap # Cut off printing space by overlap
-		scr_x2 = x + width - r_overlap # Cut off printing space by overlap
-		scr_y1 = y + t_overlap # Cut off printing space by overlap
-		scr_y2 = y + height - b_overlap # Cut off printing space by overlap
-
-		# Extract the visible pixels from what's actually going to be displayed
-		visible = img[img_y1:img_y2,img_x1:img_x2,3] > 0
-
-		# Draw the visible pixels to canvas
-		# self.pending[scr_y1:scr_y2,scr_x1:scr_x2] = pixels[img_y1:img_y2,img_x1:img_x2]
-		self.pending_lock.acquire()
-		self.pending[scr_y1:scr_y2,scr_x1:scr_x2][visible] = pixels[img_y1:img_y2,img_x1:img_x2][visible]
-		self.pending_lock.release()
+		batch = self.new_batch()
+		batch.draw_image(x, y, filename)
+		batch.draw()
 
 
 	def clear(self):
@@ -468,32 +392,5 @@ class Screen:
 			data_blocks.append(data)
 
 		# Send off the changes to client's screen
-		import time
 		for d in data_blocks:
 			self.sender(d)
-
-
-
-# # Rendering
-# def draw_pixel(x,y,r,g,b):
-# 	# Writes a space with background set to specified colour
-# 	return (
-# 		ansi_move_cursor(x,y)
-# 		+ ansi_set_bg_colour(r,g,b)
-# 		+ b" ")
-
-# def draw_box(x1, y1, x2, y2, r, g, b):
-# 	# Draws a filled box from x1,y1 to x2,y2
-# 	# Move cursor to top left and set colour
-# 	msg = b""
-
-# 	# Draw each row
-# 	for row in range(y1,y2+1): # +1 for inclusive
-# 		# Move to start of that row and set colour
-# 		msg += ansi_move_cursor(x1, row) + ansi_set_bg_colour(r,g,b)
-		
-# 		# Draw row
-# 		msg += b" " * (x2-x1+1) # +1 for inclusive
-# 	return msg
-
-
