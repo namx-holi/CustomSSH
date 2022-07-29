@@ -3,7 +3,8 @@ import math
 from apps.doom.helpers import Angle
 
 MOVE_SPEED = 10
-TURN_SPEED = 10
+TURN_SPEED = 1
+EYE_LEVEL = 401 # units
 
 
 class Player:
