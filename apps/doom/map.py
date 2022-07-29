@@ -14,12 +14,12 @@ class Map:
 
 		self.things = []
 		self.linedefs = []
-		self.sidedefs = None
+		self.sidedefs = []
 		self.vertexes = []
 		self.segs = []
 		self.subsectors = []
 		self.nodes = []
-		self.sectors = None
+		self.sectors = []
 		self.reject = None
 		self.blockmap = None
 
@@ -213,7 +213,16 @@ class Map:
 				left_sidedef  = read_uint16(data, i+12))
 			self.linedefs.append(linedef)
 	def load_sidedefs(self, data):
-		...
+		# Each sidedef is 30 bytes
+		for i in range(0, len(data), 30):
+			sidedef = Map_SideDef(
+				x_offset       = read_int16(data, i),
+				y_offset       = read_int16(data, i+2),
+				upper_texture  = data[i+4:i+12],
+				lower_texture  = data[i+12:i+20],
+				middle_texture = data[i+20:i+28],
+				sector_id      = read_uint16(data, i+28))
+			self.sidedefs.append(sidedef)
 	def load_vertexes(self, data):
 		# Each vertex is 4 bytes
 		for i in range(0, len(data), 4):
@@ -232,7 +241,6 @@ class Map:
 				direction    = read_uint16(data, i+8),
 				offset       = read_uint16(data, i+10))
 			self.segs.append(seg)
-
 	def load_ssectors(self, data):
 		# Each subsector is 4 bytes
 		for i in range(0, len(data), 4):
@@ -240,7 +248,6 @@ class Map:
 				seg_count    = read_uint16(data, i),
 				first_seg_id = read_uint16(data, i+2))
 			self.subsectors.append(subsector)
-
 	def load_nodes(self, data):
 		# Each node is 28 bytes
 		for i in range(0, len(data), 28):
@@ -261,7 +268,17 @@ class Map:
 				l_child      = read_uint16(data, i+26))
 			self.nodes.append(node)
 	def load_sectors(self, data):
-		...
+		# Each sector is 26 bytes
+		for i in range(0, len(data), 26):
+			sector = Map_Sector(
+				floor_height    = read_int16(data, i),
+				ceiling_height  = read_int16(data, i+2),
+				floor_texture   = data[i+2:i+12],
+				ceiling_texture = data[i+12:i+20],
+				light_level     = read_int16(data, i+20),
+				type_           = read_int16(data, i+22),
+				tag             = read_int16(data, i+24))
+			self.sectors.append(sector)
 	def load_reject(self, data):
 		...
 	def load_blockmap(self, data):
@@ -274,12 +291,12 @@ class Map:
 			+ f"{len(self.players)} players, "
 			+ f"{len(self.things)} things, "
 			+ f"{len(self.linedefs)} linedefs, "
-			+ f"0 sidedefs, "
+			+ f"{len(self.sidedefs)} sidedefs, "
 			+ f"{len(self.vertexes)} vertexes, "
 			+ f"{len(self.segs)} segs, "
 			+ f"{len(self.subsectors)} ssectors, "
 			+ f"{len(self.nodes)} nodes, "
-			+ f"0 sectors, "
+			+ f"{len(self.sectors)} sectors, "
 			+ f"0 reject, "
 			+ f"0 blockmap>")
 
@@ -296,17 +313,31 @@ class Map_Thing:
 		return f"<Thing: pos=({self.x},{self.y}), angle={self.angle}, type={self.type}, flags={self.flags}>"
 
 class Map_Linedef:
-	def __init__(self, start_vertex, end_vertex, flags, line_type, sector_tag, right_sidedef, left_sidedef):
+	def __init__(self,
+		start_vertex, end_vertex,
+		flags, line_type, sector_tag,
+		right_sidedef, left_sidedef
+	):
 		self.start_vertex = start_vertex
 		self.end_vertex = end_vertex
 		self.flags = flags
 		self.line_type = line_type
 		self.sector_tag = sector_tag
-		self.right_sidedef = right_sidedef
-		self.left_sidedef = left_sidedef
+		self.right_sidedef = right_sidedef if right_sidedef != 0xffff else None
+		self.left_sidedef  = left_sidedef  if left_sidedef  != 0xffff else None
 
 class Map_SideDef:
-	...
+	def __init__(self,
+			x_offset, y_offset,
+			upper_texture, lower_texture, middle_texture,
+			sector_id
+		):
+			self.x_offset = x_offset
+			self.y_offset = y_offset
+			self.upper_texture = upper_texture
+			self.lower_texture = lower_texture
+			self.middle_texture = middle_texture
+			self.sector_id = sector_id
 
 class Map_Vertex:
 	def __init__(self, x, y):
@@ -355,4 +386,15 @@ class Map_Node:
 		self.l_child = l_child
 
 class Map_Sector:
-	...
+	def __init__(self,
+		floor_height, ceiling_height,
+		floor_texture, ceiling_texture,
+		light_level, type_, tag
+	):
+		self.floor_height = floor_height
+		self.ceiling_height = ceiling_height
+		self.floor_texture = floor_texture
+		self.ceiling_texture = ceiling_texture
+		self.light_level = light_level
+		self.type = type_
+		self.tag = tag
