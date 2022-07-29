@@ -45,8 +45,12 @@ class Renderer:
 
 
 	def render_automap(self):
+		# Start a batch render as we don't want to render frames during
+		#  drawing this screen
+		batch = self.screen.new_batch()
+
 		# Render the player
-		self.screen.draw_box(
+		batch.draw_box(
 			self.remap_automap_x_to_screen(self.player.x),
 			self.remap_automap_x_to_screen(self.player.x),
 			self.remap_automap_y_to_screen(self.player.y),
@@ -55,7 +59,7 @@ class Renderer:
 
 		# Render all other things on the map
 		for t in self.map.things:
-			self.screen.draw_box(
+			batch.draw_box(
 				self.remap_automap_x_to_screen(t.x),
 				self.remap_automap_x_to_screen(t.x),
 				self.remap_automap_y_to_screen(t.y),
@@ -63,18 +67,21 @@ class Renderer:
 				0xff00ff)
 
 		# Render nodes
-		self._render_bsp_nodes()
+		self._render_bsp_nodes(batch)
+
+		# Draw the batch to the screen
+		batch.draw()
 
 
-	def _render_bsp_nodes(self, node_id=None):
+	def _render_bsp_nodes(self, screen, node_id=None):
 		# Start with root node if not specified
 		if node_id is None:
-			return self._render_bsp_nodes(len(self.map.nodes)-1)
+			return self._render_bsp_nodes(screen, len(self.map.nodes)-1)
 
 		# Mask all bits except the last one to check if this is a
 		#  subsector
 		if node_id & 0x8000:
-			self._render_subsector(node_id & (~0x8000))
+			self._render_subsector(screen, node_id & (~0x8000))
 			return
 
 		# Get the position of the player and find the next best node
@@ -82,14 +89,14 @@ class Renderer:
 		y = self.player.y
 		if self._is_point_on_left_side(x, y, node_id):
 			# Render the left side first as closest
-			self._render_bsp_nodes(self.map.nodes[node_id].l_child)
-			self._render_bsp_nodes(self.map.nodes[node_id].r_child)
+			self._render_bsp_nodes(screen, self.map.nodes[node_id].r_child)
+			self._render_bsp_nodes(screen, self.map.nodes[node_id].l_child)
 		else:
 			# Render the right side first as closest
-			self._render_bsp_nodes(self.map.nodes[node_id].r_child)
-			self._render_bsp_nodes(self.map.nodes[node_id].l_child)
+			self._render_bsp_nodes(screen, self.map.nodes[node_id].l_child)
+			self._render_bsp_nodes(screen, self.map.nodes[node_id].r_child)
 
-	def _render_subsector(self, subsector_id):
+	def _render_subsector(self, screen, subsector_id):
 		# Get the actual subsector
 		subsector = self.map.subsectors[subsector_id]
 
