@@ -25,7 +25,7 @@ class Game:
 		self.flag_offset_x = 1
 		self.flag_offset_y = 1
 
-		self.flag_toggle = False
+		self.automap_showing = False
 		# self.draw_trans_flag()
 
 		# Start doom engine
@@ -39,13 +39,16 @@ class Game:
 		self.doom_engine.player.move_forward()
 	def move_backward(self):
 		self.doom_engine.player.move_backward()
-
-
+	def toggle_automap(self):
+		self.automap_showing = not self.automap_showing
 	def draw_demon(self):
 		self.screen.draw_image(20, 20, "apps/doom/Cacodemon_sprite.png")
 
-	def draw_automap(self):
-		self.doom_engine.draw_automap()
+	def draw_screen(self):
+		if self.automap_showing:
+			self.doom_engine.draw_automap()
+		else:
+			self.doom_engine.draw_projection()
 
 
 
@@ -147,6 +150,7 @@ class DoomGame(AppGeneric):
 			elif key == b"s": self.handle_key_s()
 			elif key == b"d": self.handle_key_d()
 			elif key == b"e": self.handle_key_e()
+			elif key == b"\t": self.handle_key_tab()
 
 			# Unbound keys
 			else:
@@ -187,7 +191,7 @@ class DoomGame(AppGeneric):
 		"""
 		while self.running.isSet():
 			# Redraw the map every 2/30
-			self.game.doom_engine.draw_automap(self.screen)
+			self.game.draw_screen()
 			time.sleep(2/30)
 
 
@@ -211,6 +215,9 @@ class DoomGame(AppGeneric):
 
 	def handle_key_e(self):
 		self.game.draw_demon()
+
+	def handle_key_tab(self):
+		self.game.toggle_automap()
 
 	def handle_key_unbound(self, key):
 		print(f"Unhandled key {key}")

@@ -22,6 +22,8 @@ class DoomEngine:
 		self.renderer = Renderer(screen, self.player, self.map)
 
 
-	def draw_automap(self, screen):
-		# self.map.render_automap(screen, self.player)
+	def draw_automap(self):
 		self.renderer.render_automap()
+
+	def draw_projection(self):
+		self.renderer.render_perspective()

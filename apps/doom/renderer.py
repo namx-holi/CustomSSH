@@ -44,10 +44,30 @@ class Renderer:
 		return self.screen.height - (y + self._automap_y_offset) // self._automap_scale_factor - 1
 
 
+	def render_perspective(self):
+		# Start a batch render as we don't want to render frames during
+		#  drawing this screen
+		batch = self.screen.new_batch()
+
+		# Render nodes
+		self._render_bsp_nodes(batch)
+
+		# Draw the batch to the screen
+		batch.draw()
+
 	def render_automap(self):
 		# Start a batch render as we don't want to render frames during
 		#  drawing this screen
 		batch = self.screen.new_batch()
+
+		# Draw the walls
+		for line in self.map.linedefs:
+			batch.draw_line(
+				self.remap_automap_x_to_screen(line.start_vertex.x),
+				self.remap_automap_x_to_screen(line.end_vertex.x),
+				self.remap_automap_y_to_screen(line.start_vertex.y),
+				self.remap_automap_y_to_screen(line.end_vertex.y),
+				0x0000ff)
 
 		# Render the player
 		batch.draw_box(
@@ -66,70 +86,46 @@ class Renderer:
 				self.remap_automap_y_to_screen(t.y),
 				0xff00ff)
 
-		# Render nodes
-		self._render_bsp_nodes(batch)
-
 		# Draw the batch to the screen
 		batch.draw()
 
 
-	def _render_bsp_nodes(self, screen, node_id=None):
+	def _render_bsp_nodes(self, screen, node=None):
 		# Start with root node if not specified
-		if node_id is None:
-			return self._render_bsp_nodes(screen, len(self.map.nodes)-1)
+		if node is None:
+			return self._render_bsp_nodes(screen, self.map.nodes[-1])
 
-		# Mask all bits except the last one to check if this is a
-		#  subsector
-		if node_id & 0x8000:
-			self._render_subsector(screen, node_id & (~0x8000))
+		# If the node is a subsector, render it instead of recursing
+		if node.is_subsector():
+			self._render_subsector(screen, node)
 			return
 
 		# Get the position of the player and find the next best node
 		x = self.player.x
 		y = self.player.y
-		if self._is_point_on_left_side(x, y, node_id):
+		if self._is_point_on_left_side(x, y, node):
 			# Render the left side first as closest
-			self._render_bsp_nodes(screen, self.map.nodes[node_id].r_child)
-			self._render_bsp_nodes(screen, self.map.nodes[node_id].l_child)
+			self._render_bsp_nodes(screen, node.r_child)
+			self._render_bsp_nodes(screen, node.l_child)
 		else:
 			# Render the right side first as closest
-			self._render_bsp_nodes(screen, self.map.nodes[node_id].l_child)
-			self._render_bsp_nodes(screen, self.map.nodes[node_id].r_child)
+			self._render_bsp_nodes(screen, node.l_child)
+			self._render_bsp_nodes(screen, node.r_child)
 
-	def _render_subsector(self, screen, subsector_id):
-		# Get the actual subsector
-		subsector = self.map.subsectors[subsector_id]
-
+	def _render_subsector(self, screen, subsector):
 		# For every segment in the subsector, draw it if visible
-		for i in range(subsector.seg_count):
-			seg = self.map.segs[subsector.first_seg_id + i]
+		for seg in subsector.segs:
+			if self._wall_is_visible(seg.start_vertex, seg.end_vertex):
+				self._project_wall(screen, seg.start_vertex, seg.end_vertex)
 
-			if self._wall_is_visible(
-				v1=self.map.vertexes[seg.start_vertex],
-				v2=self.map.vertexes[seg.end_vertex]
-			):
-				# Draw the wall projection
-				self._project_wall(
-					screen,
-					self.map.vertexes[seg.start_vertex],
-					self.map.vertexes[seg.end_vertex])
-
-				# Draw the automap on top
-				screen.draw_line(
-					self.remap_automap_x_to_screen(self.map.vertexes[seg.start_vertex].x),
-					self.remap_automap_x_to_screen(self.map.vertexes[seg.end_vertex].x),
-					self.remap_automap_y_to_screen(self.map.vertexes[seg.start_vertex].y),
-					self.remap_automap_y_to_screen(self.map.vertexes[seg.end_vertex].y),
-					0x0000ff)
-
-	def _is_point_on_left_side(self, x, y, node_id):
+	def _is_point_on_left_side(self, x, y, node):
 		# Checks if the given point is on the left partition of the
 		#  given node id
-		dx = x - self.map.nodes[node_id].x_partition
-		dy = y - self.map.nodes[node_id].y_partition
+		dx = x - node.x_partition
+		dy = y - node.y_partition
 		return (
-			(dx * self.map.nodes[node_id].dy_partition)
-			- (dy * self.map.nodes[node_id].dx_partition)
+			(dx * node.dy_partition)
+			- (dy * node.dx_partition)
 		) <= 0
 
 
