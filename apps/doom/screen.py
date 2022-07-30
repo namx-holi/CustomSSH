@@ -87,21 +87,21 @@ class Batch:
 
 		# If drawing pixel under, only fill if the pixel has not already
 		#  been set
-		if under and self.pending[y,x] == self.NO_CHANGE:
+		if under and self.pending[y,x] != self.NO_CHANGE:
 			return
 
 		# Sets one pixel in the pending view
 		self.pending[y,x] = colour
 
 
-	def draw_line(self, x1, x2, y1, y2, colour):
+	def draw_line(self, x1, x2, y1, y2, colour, under=False):
 		"""Bresenham's line algorithm from rosetta code"""
 		dx = abs(x2 - x1)
 		dy = abs(y2 - y1)
 
 		# TODO: If there is no gradient, just draw boxes, much quicker
 		if dx == 0 or dy == 0:
-			self.draw_box(x1, x2, y1, y2, colour, fill=True)
+			self.draw_box(x1, x2, y1, y2, colour, fill=True, under=under)
 			# self.draw_pixel(x2, y2, colour)
 			return
 
@@ -111,7 +111,7 @@ class Batch:
 		if dx > dy:
 			err = dx / 2.0
 			while x != x2:
-				self.draw_pixel(x, y, colour)
+				self.draw_pixel(x, y, colour, under=under)
 				err -= dy
 				if err < 0:
 					y += sy
@@ -120,13 +120,13 @@ class Batch:
 		else:
 			err = dy / 2.0
 			while y != y2:
-				self.draw_pixel(x, y, colour)
+				self.draw_pixel(x, y, colour, under=under)
 				err -= dx
 				if err < 0:
 					x += sx
 					err += dy
 				y += sy
-		self.draw_pixel(x, y, colour)
+		self.draw_pixel(x, y, colour, under=under)
 
 
 	def draw_box(self, x1, x2, y1, y2, colour, fill=False, under=False):
@@ -142,41 +142,20 @@ class Batch:
 		if y1 > y2:
 			y1, y2 = y2, y1
 
-		# Box is inclusive of coords. TODO: Verify this?
-		# x2 += 1
-		# y2 += 1
+		# Box region is inclusive of coords
+		x2 += 1
+		y2 += 1
 
-		# If any x or y coords are the same, indexing [x:x] won't give
-		#  anything, so we need to address slightly differently
-		if x1 == x2 and y1 == y2:
-			self.draw_pixel(x1, y1, colour, under=under)
-		elif x1 == x2:
-			draw_region = self.pending[y1:y2+1,x1:x1+1]
+		if fill:
+			draw_region = self._get_draw_region(x1,x2,y1,y2)
 			if under:
 				draw_region[draw_region == self.NO_CHANGE] = colour
 			else:
 				draw_region[:] = colour
-			# self.pending[y1:y2+1,x1:x1+1] = colour # Vertical line
-
-		elif y1 == y2:
-			draw_region = self.pending[y1:y1+1,x1:x2+1]
-			if under:
-				draw_region[draw_region == self.NO_CHANGE] = colour
-			else:
-				draw_region[:] = colour
-			# self.pending[y1:y1+1,x1:x2+1] = colour # Horizontal line
-
-		elif fill:
-			draw_region = self.pending[y1:y2+1, x1:x2+1]
-			if under:
-				draw_region[draw_region == self.NO_CHANGE] = colour
-			else:
-				draw_region[:] = colour
-			# self.pending[y1:y2, x1:x2] = colour # Actual box
 
 		else:
-			# Draw 4 boxes, one for each border
-			draw_region = self.pending[y1:y2+1, x1:x2+1]
+			# Draw the box, then refill it with what was in the center
+			draw_region = self._get_draw_region(x1,x2,y1,y2)
 			center_space = draw_region[1:-1, 1:-1].copy()
 
 			if under:
@@ -187,12 +166,56 @@ class Batch:
 			# Restore the center space
 			draw_region[1:-1, 1:-1] = center_space
 
-			# # Draw 4 boxes, one for each border
-			# # TODO: Speed this up possibly?
-			# self.pending[y1:y1+1, x1:x2] = colour # Top
-			# self.pending[y2-1:y2, x1:x2] = colour # Bottom
-			# self.pending[y1:y2, x1:x1+1] = colour # Left
-			# self.pending[y1:y2, x2-1:x2] = colour # Right
+
+		# # If any x or y coords are the same, indexing [x:x] won't give
+		# #  anything, so we need to address slightly differently
+		# if x1 == x2 and y1 == y2:
+		# 	self.draw_pixel(x1, y1, colour, under=under)
+		# elif x1 == x2:
+		# 	# draw_region = self.pending[y1:y2+1,x1:x1+1]
+		# 	draw_region = self._get_draw_region(x1,x2,y1,y2)
+		# 	if under:
+		# 		draw_region[draw_region == self.NO_CHANGE] = colour
+		# 	else:
+		# 		draw_region[:] = colour
+
+		# elif y1 == y2:
+		# 	# draw_region = self.pending[y1:y1+1,x1:x2+1]
+		# 	draw_region = self._get_draw_region(x1,x2,y1,y2)
+		# 	if under:
+		# 		draw_region[draw_region == self.NO_CHANGE] = colour
+		# 	else:
+		# 		draw_region[:] = colour
+
+		# elif fill:
+		# 	# draw_region = self.pending[y1:y2+1, x1:x2+1]
+		# 	draw_region = self._get_draw_region(x1,x2,y1,y2)
+		# 	if under:
+		# 		draw_region[draw_region == self.NO_CHANGE] = colour
+		# 	else:
+		# 		draw_region[:] = colour
+
+		# else:
+		# 	# Draw 4 boxes, one for each border
+		# 	# draw_region = self.pending[y1:y2+1, x1:x2+1]
+		# 	draw_region = self._get_draw_region(x1,x2,y1,y2)
+		# 	center_space = draw_region[1:-1, 1:-1].copy()
+
+		# 	if under:
+		# 		draw_region[draw_region == self.NO_CHANGE] = colour
+		# 	else:
+		# 		draw_region[:] = colour
+
+		# 	# Restore the center space
+		# 	draw_region[1:-1, 1:-1] = center_space
+
+
+	def _get_draw_region(self, x1, x2, y1, y2):
+		x1 = np.clip(x1, 0, self.width)
+		x2 = np.clip(x2, 0, self.width)
+		y1 = np.clip(y1, 0, self.height)
+		y2 = np.clip(y2, 0, self.height)
+		return self.pending[y1:y2,x1:x2]
 
 
 	def draw_image(self, x, y, filename):

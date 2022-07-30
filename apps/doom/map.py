@@ -129,12 +129,12 @@ class Map_Thing:
 
 class Map_Sector:
 	def __init__(self, wad_sector):
-		self.floor_height = wad_sector.floor_height,
-		self.ceiling_height = wad_sector.ceiling_height,
-		self.floor_texture = wad_sector.floor_texture,
-		self.ceiling_texture = wad_sector.ceiling_texture,
-		self.light_level = wad_sector.light_level,
-		self.type = wad_sector.type,
+		self.floor_height = wad_sector.floor_height
+		self.ceiling_height = wad_sector.ceiling_height
+		self.floor_texture = wad_sector.floor_texture
+		self.ceiling_texture = wad_sector.ceiling_texture
+		self.light_level = wad_sector.light_level
+		self.type = wad_sector.type
 		self.tag = wad_sector.tag
 
 class Map_Sidedef:
@@ -194,7 +194,6 @@ class Map_Seg:
 			self.left_sector = self.left_sidedef.sector
 		else:
 			self.left_sector = None
-
 
 class Map_Subsector:
 	def __init__(self, wad_subsector, segs):
