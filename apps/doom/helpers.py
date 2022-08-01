@@ -18,6 +18,30 @@ def read_uint32(data, offset):
 
 def normalise_angle(a):
 	"""
-	Adjusts an angle to be within the range [0, 360]
+	Adjusts an angle to be within the range [-180, 180]
 	"""
-	return a % 360
+	return (a + 180) % 360 - 180
+
+
+# Class that can be used to perform some vector methods
+class Vector:
+
+	def __init__(self, x, y):
+		self.x = x
+		self.y = y
+
+	def cross(self, v):
+		# Cross product
+		return self.x * v.y - self.y * v.x
+
+	def __add__(self, v):
+		return Vector(self.x + v.x, self.y + v.y)
+
+	def __sub__(self, v):
+		return Vector(self.x - v.x, self.y - v.y)
+
+	def __mul__(self, other):
+		return Vector(self.x * other, self.y * other)
+
+	def __repr__(self):
+		return f"<Vector ({self.x}, {self.y})>"

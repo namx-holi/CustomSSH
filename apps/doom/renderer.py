@@ -1,7 +1,8 @@
 import numpy as np
-from apps.doom.helpers import normalise_angle
+from apps.doom.helpers import normalise_angle, Vector
 
 import time
+
 
 
 class Renderer:
@@ -123,73 +124,6 @@ class Renderer:
 			self._render_bsp_nodes(screen, node.l_child)
 
 
-	def _render_subsector(self, screen, subsector):
-		for seg in subsector.segs:
-			visible, v1_angle, v2_angle = self._clip_vertexes_in_fov(seg.start_vertex, seg.end_vertex)
-
-			if visible:
-				self.add_wall_in_fov(screen, seg, v1_angle, v2_angle)
-
-
-	def add_wall_in_fov(self, screen, seg, v1_angle, v2_angle):
-		# Solid walls don't have a left side
-		if seg.left_sector is None:
-			self.add_solid_wall(screen, seg, v1_angle, v2_angle)
-
-	def add_solid_wall(self, screen, seg, v1_angle, v2_angle):
-		v1_x_screen = self._angle_to_screen(v1_angle)
-		v2_x_screen = self._angle_to_screen(v2_angle)
-		# screen.draw_line(v1_x_screen, v1_x_screen, 0, 320, 0xffffff)
-		# screen.draw_line(v2_x_screen, v2_x_screen, 0, 320, 0xffffff)
-
-		# Calculate the wall ceiling and floor points
-		(
-			ceiling_v1_on_screen, floor_v1_on_screen,
-			ceiling_v2_on_screen, floor_v2_on_screen
-		) = self.calculate_wall_height_simple(seg, v1_x_screen, v2_x_screen)#, v1_angle, v2_angle)
-
-
-		# TODO: Remove
-		# Calculate how far the midpoint of the wall is
-		v1_point = seg.start_vertex
-		v2_point = seg.end_vertex
-		mid_x = (v1_point.x + v2_point.x)/2
-		mid_y = (v1_point.y + v2_point.y)/2
-		dist = ((mid_x - self.player.x)**2 + (mid_y - self.player.y)**2)**0.5
-		FOG_DIST = 1500 # Past this dist is black
-		colour_percentage = 1 - np.clip(dist, 0, FOG_DIST)/FOG_DIST
-		# Do some maths so that far away looks a lot further away. ie non linear brightness
-		colour_percentage = colour_percentage ** 4
-		brightness = int(colour_percentage * 0xff)
-		colour = brightness * 0x10101 # Turn into a grey
-
-		# print("Drawing a polygon")
-		# print("  top left",  v1_x_screen, ceiling_v1_on_screen)
-		# print("  top right", v2_x_screen, ceiling_v2_on_screen)
-		# print("  bot left",  v1_x_screen, floor_v1_on_screen)
-		# print("  bot right", v2_x_screen, floor_v2_on_screen)
-
-		# Draw wall wireframe
-		screen.draw_line(
-			v1_x_screen, v1_x_screen, ceiling_v1_on_screen, floor_v1_on_screen,
-			colour=colour, under=True)
-		screen.draw_line(
-			v2_x_screen, v2_x_screen, ceiling_v2_on_screen, floor_v2_on_screen,
-			colour=colour, under=True)
-		screen.draw_line(
-			v1_x_screen, v2_x_screen, ceiling_v1_on_screen, ceiling_v2_on_screen,
-			colour=colour, under=True)
-		screen.draw_line(
-			v1_x_screen, v2_x_screen, floor_v1_on_screen, floor_v2_on_screen,
-			colour=colour, under=True)
-
-		# screen.draw_box(
-		# 	v1_x_screen, v2_x_screen, 75, 125,
-		# 	colour=colour, fill=True, under=True)
-		# screen.draw()
-		# time.sleep(1)
-
-
 	def _is_point_on_left_side(self, x, y, node):
 		# Checks if the given point is on the left partition of the
 		#  given node id
@@ -198,214 +132,157 @@ class Renderer:
 		return ((dx * node.dy_partition) - (dy * node.dx_partition)) <= 0
 
 
-	def _clip_vertexes_in_fov(self, v1, v2):
-		V1_angle = self.player.angle_to_vertex(v1)
-		V2_angle = self.player.angle_to_vertex(v2)
+	def _render_subsector(self, screen, subsector):
+		for seg in subsector.segs:
+			v1 = seg.start_vertex
+			v2 = seg.end_vertex
 
-		V1_to_V2_span = normalise_angle(V1_angle - V2_angle)
-		if V1_to_V2_span >= 180:
-			return False, None, None
+			# Check if the wall is visible, and if so, what it's
+			#  clipped at within the players FOV
+			visible, v1, v2, v1_angle, v2_angle = self._clipped_wall(v1, v2)
 
-		# Rotate everything around the player
-		V1_angle = normalise_angle(V1_angle - self.player.angle)
-		V2_angle = normalise_angle(V2_angle - self.player.angle)
-
-		# Validate and clip V1
-		# Shift angles to be between 0 and 90
-		# TODO: Handle different FOV
-		V1_moved = normalise_angle(V1_angle + self.half_fov)
-		if V1_moved > self.player.fov:
-			# Nowe we know that V1 is outside the left side of the FOV
-			#  but we need to check is V2 also outside.
-			V1_moved_angle = V1_moved - self.player.fov
-
-			# Are v1 and v2 both outside?
-			if V1_moved_angle >= V1_to_V2_span:
-				return False, None, None
-
-			# At this point, V2 or part of the line should be in the
-			#  FOV. We need to clip V1
-			V1_angle = normalise_angle(self.half_fov)
-
-		# Validate and clip V2
-		V2_moved = normalise_angle(self.half_fov - V2_angle)
-
-		# Is V2 outside the FOV?
-		if V2_moved > self.player.fov:
-			V2_angle = normalise_angle(-self.half_fov)
-
-		# For some reason we add 90?
-		# TODO: Why do we do this?
-		V1_angle = normalise_angle(V1_angle + 90)
-		V2_angle = normalise_angle(V2_angle + 90)
-		return True, V1_angle, V2_angle
+			if visible:
+				self.add_wall_in_fov(screen, seg, v1, v2, v1_angle, v2_angle)
 
 
-	def _angle_to_screen(self, angle):
-		iX = 0
+	def _clipped_wall(self, v1, v2):
+		# These angles are relative to the player
+		v1_angle = self.player.angle_to_vertex(v1)
+		v2_angle = self.player.angle_to_vertex(v2)
 
-		if angle > 90:
-			angle = normalise_angle(angle - 90)
-			ix = self.half_screen_width - np.tan(np.deg2rad(angle)) * self.screen_distance
+		# If the right side of the wall isn't facing us. The first check
+		#  with span works for cases when the points are in front of the
+		#  player or when they are behind the player but on the same
+		#  side. The second check is for the special case when V1 is
+		#  behind the player to the left and V2 is behind the player and
+		#  to the right.
+		v1_to_v2_span = v1_angle - v2_angle
+		if v1_to_v2_span <= 0:
+			return False, None, None, None, None
+		if v1_angle > 90 and v2_angle < -90:
+			return False, None, None, None, None
+
+		# Check if both V1 and V2 are outside the FOV
+		if v1_angle > self.half_fov and v2_angle > self.half_fov:
+			return False, None, None, None, None
+		elif v1_angle < -self.half_fov and v2_angle < -self.half_fov:
+			return False, None, None, None, None
+
+		# If V1 is too far left, must clip it
+		if v1_angle > self.half_fov:
+			left_fov_angle = self.player.angle + self.half_fov
+			v1 = self.calculate_fov_intersection(v1, v2, left_fov_angle)
+			v1_angle = self.half_fov
+
+		# If V2 is too far left, must clip it
+		if v2_angle < -self.half_fov:
+			right_fov_angle = self.player.angle - self.half_fov
+			v2 = self.calculate_fov_intersection(v1, v2, right_fov_angle)
+			v2_angle = -self.half_fov
+
+		return True, v1, v2, v1_angle, v2_angle
+
+
+	def calculate_fov_intersection(self, v1, v2, fov_angle):
+		# Uses Cramer's Rule
+		fov_vector = Vector(
+			np.cos(np.deg2rad(fov_angle)),
+			np.sin(np.deg2rad(fov_angle)))
+
+		# Turn the wall points and player pos into vectors
+		v1 = Vector(v1.x, v1.y)
+		v2 = Vector(v2.x, v2.y)
+		player_pos = Vector(self.player.x, self.player.y)
+
+		# Calculate intersection
+		R = v2 - v1
+		u = (v1 - player_pos).cross(R) / fov_vector.cross(R)
+		return player_pos + fov_vector*u
+
+
+	def add_wall_in_fov(self, screen, seg, v1, v2, v1_angle, v2_angle):
+		# Solid walls don't have a left side
+		if seg.left_sector is None:
+			self.add_solid_wall(screen, seg, v1, v2, v1_angle, v2_angle)
+
+
+	def get_wall_colour(self, v1, v2):
+		# Basic method that gets a shade of grey for the segment,
+		#  brighter if close and darker if far. Uses the midpoint for
+		#  distance,
+		mid_x = (v1.x + v2.x)/2
+		mid_y = (v1.y + v2.y)/2
+		dist = ((mid_x - self.player.x)**2 + (mid_y - self.player.y)**2) ** 0.5
+
+		FOG_DIST = 1500 # Past this distance is black
+		colour_percentage = 1 - np.clip(dist, 0, FOG_DIST)/FOG_DIST
+
+		# Make brightness scale non linear
+		colour_percentage = colour_percentage ** 4
+
+		# Calculate brightness of RGB
+		brightness = int(colour_percentage * 0xff) * 0x10101
+		return brightness
+
+
+	def add_solid_wall(self, screen, seg, v1, v2, v1_angle, v2_angle):
+		v1_angle = normalise_angle(v1_angle)
+		v2_angle = normalise_angle(v2_angle)
+
+		# Calculate the widths on screen of each edge of the wall
+		v1_x = self._angle_to_screen_width(v1_angle)
+		v2_x = self._angle_to_screen_width(v2_angle)
+
+		# Fetch the relative wall heights to the player
+		ceiling_height = seg.right_sector.ceiling_height - self.player.z
+		floor_height   = seg.right_sector.floor_height   - self.player.z
+
+		# Calculate the heights on screen of each corner of the wall
+		v1_ceiling_y, v1_floor_y = self.calculate_wall_screen_heights(
+			ceiling_height, floor_height, v1, v1_angle)
+		v2_ceiling_y, v2_floor_y = self.calculate_wall_screen_heights(
+			ceiling_height, floor_height, v2, v2_angle)
+
+		# Get the colour of the wall
+		colour = self.get_wall_colour(v1, v2)
+
+		# Draw wall wireframe
+		screen.draw_line(v1_x, v1_x, v1_ceiling_y, v1_floor_y, colour=colour, under=True)
+		screen.draw_line(v2_x, v2_x, v2_ceiling_y, v2_floor_y, colour=colour, under=True)
+		screen.draw_line(v1_x, v2_x, v1_ceiling_y, v2_ceiling_y, colour=colour, under=True)
+		screen.draw_line(v1_x, v2_x, v1_floor_y, v2_floor_y, colour=colour, under=True)
+
+		# screen.draw()
+		# time.sleep(1)
+
+
+	def calculate_wall_screen_heights(self, ceiling_height, floor_height, v, v_angle):
+		# Calculate the distance to the vertex
+		v_dist = self.player.distance_to_vertex(v)
+
+		# Calculate the distance the point is from the screen
+		v_screen_dist = self.screen_distance / np.cos(np.deg2rad(v_angle))
+
+		# Calculate ceiling heights and floor heights
+		v_ceiling_y = abs(ceiling_height) * v_screen_dist / v_dist
+		v_floor_y   = abs(floor_height)   * v_screen_dist / v_dist
+
+		# Readjust the ceiling to fit on screen
+		if ceiling_height > 0:
+			v_ceiling_y = self.half_screen_height - v_ceiling_y
 		else:
-			angle = normalise_angle(90 - angle)
-			ix = np.tan(np.deg2rad(angle)) * self.screen_distance + self.half_screen_width
+			v_ceiling_y += self.half_screen_height
 
+		# Similarly for the floor
+		if floor_height > 0:
+			v_floor_y = self.half_screen_height - v_floor_y
+		else:
+			v_floor_y += self.half_screen_height
+
+		# Return the screen heights as integers
+		return int(round(v_ceiling_y)), int(round(v_floor_y))
+
+
+	def _angle_to_screen_width(self, angle):
+		ix = self.half_screen_width - np.tan(np.deg2rad(angle)) * self.screen_distance
 		return int(round(ix))
-
-
-
-
-
-
-
-
-
-	def calculate_ceiling_floor_height(self, seg, v_x_screen, distance_to_v):
-		ceiling = seg.right_sector.ceiling_height - self.player.z
-		floor = seg.right_sector.floor_height - self.player.z
-
-		v_screen_angle = self.screen_x_to_angle[v_x_screen]
-		distance_v_to_screen = self.screen_distance / np.cos(np.deg2rad(v_screen_angle))
-
-		ceiling_v_on_screen = np.abs(ceiling) * distance_v_to_screen / distance_to_v
-		floor_v_on_screen = np.abs(floor) * distance_v_to_screen / distance_to_v
-
-		if ceiling > 0:
-			ceiling_v_on_screen = self.half_screen_height - ceiling_v_on_screen
-		else:
-			ceiling_v_on_screen += self.half_screen_height
-
-		if floor > 0:
-			floor_v_on_screen = self.half_screen_height - floor_v_on_screen
-		else:
-			floor_v_on_screen += self.half_screen_height
-
-		# print("ceil and floor are", ceiling_v_on_screen, floor_v_on_screen)
-		return int(ceiling_v_on_screen), int(floor_v_on_screen)
-
-
-	def calculate_wall_height_simple(self, seg, v1_x_screen, v2_x_screen):
-		distance_to_v1 = self.player.distance_to_vertex(seg.start_vertex)
-		distance_to_v2 = self.player.distance_to_vertex(seg.end_vertex)
-
-		# TODO: Prevent recalculating this
-		v1_angle = self.player.angle_to_vertex(seg.start_vertex)
-		v2_angle = self.player.angle_to_vertex(seg.end_vertex)
-
-		# Special case partial seg on the left
-		if v1_x_screen <= 0:
-			distance_to_v1 = self.partial_seg(seg, v1_angle, v2_angle, distance_to_v1, True)
-			# v1_x_screen = 0
-
-		# Special case partial seg on the right
-		if v2_x_screen >= self.screen.width - 1:
-			distance_to_v2 = self.partial_seg(seg, v1_angle, v2_angle, distance_to_v2, False)
-			# v2_x_screen = self.screen.width - 1
-
-		ceiling_v1_on_screen, floor_v1_on_screen = self.calculate_ceiling_floor_height(seg, v1_x_screen, distance_to_v1)
-		ceiling_v2_on_screen, floor_v2_on_screen = self.calculate_ceiling_floor_height(seg, v2_x_screen, distance_to_v2)
-
-		return (
-			ceiling_v1_on_screen, floor_v1_on_screen,
-			ceiling_v2_on_screen, floor_v2_on_screen)
-
-
-	def partial_seg(self, seg, v1_angle, v2_angle, distance_to_v, is_left_side):
-		"""
-		Triangle ABC:
-			point A = vertex 1
-			point B = vertex 2
-			point C = player
-
-		Angle@C = span from V1 to V2
-		sin(B) / AC(side b) = sin(C) / AB(side c) : sine rule
-			-> Angle B
-		Angle A = 180 - Angle@B - Angle@C : sum of triangle = 180
-
-		Angle C2 = angle ACX, found using overlap with FOV
-		X : Point where FOV intersects AB
-		Angle@X = 180 - Angle@A - Angle C2 : sum of triangle = 180
-
-		Then:
-			XC / sin(A) = AC / sin(X)
-
-		Where XC is the distance X to the player, i.e. distance_to_v
-		"""
-		angle_c = normalise_angle(v1_angle - v2_angle)
-		side_c = (
-			(seg.start_vertex.x - seg.end_vertex.x)**2
-			+ (seg.start_vertex.y - seg.end_vertex.y)**2) ** 0.5
-
-		# TODO: Only verified this for if distance_to_v is to V1
-		SIN_angle_b = distance_to_v * np.sin(np.deg2rad(angle_c)) / side_c
-		angle_b = normalise_angle(np.rad2deg(np.arcsin(SIN_angle_b)))
-
-		# Sum of angles of triangle is 180
-		angle_a = normalise_angle(180 - angle_b - angle_c)
-
-		# print("V1 angle is", v1_angle)
-		# print("V2 angle is", v2_angle)
-
-		# print("Angle A:", angle_a)
-		# print("Angle B:", angle_b)
-		# print("Angle C:", angle_c)
-		# print("Side C:", side_c)
-
-		# Calculate the point where FOV intersects AB(side c)
-		if is_left_side:
-			angle_c2 = normalise_angle(v1_angle - (self.player.angle + self.half_fov))
-		else:
-			angle_c2 = normalise_angle((self.player.angle - self.half_fov) - v2_angle)
-		# print("Angle C2", angle_c2)
-
-		# Sum of new triangles angles = 180
-		# print("Old dist to v:", distance_to_v)
-		angle_x = normalise_angle(180 - angle_a - angle_c2)
-		distance_to_v = distance_to_v * np.sin(np.deg2rad(angle_a)) / np.sin(np.deg2rad(angle_x))
-		# print("New dist to v:", distance_to_v)
-		return distance_to_v
-
-
-
-
-
-
-		return
-
-
-
-
-
-
-
-
-
-
-
-
-
-		print("distance_to_v was", distance_to_v)
-		dx = seg.start_vertex.x - seg.end_vertex.x
-		dy = seg.start_vertex.y - seg.end_vertex.y
-		side_c = (dx**2 + dy**2) ** 0.5
-		V1_to_V2_span = normalise_angle(v1_angle - v2_angle)
-		sine_angle_b = distance_to_v * np.sin(np.deg2rad(V1_to_V2_span)) / side_c
-		angle_b = normalise_angle(np.rad2deg(np.arcsin(sine_angle_b)))
-		angle_a = normalise_angle(180 - V1_to_V2_span - angle_b)
-
-		if is_left_side:
-			angle_v_to_fov = normalise_angle(v1_angle - (self.player.angle + 45))
-		else:
-			angle_v_to_fov = normalise_angle((self.player.angle - 45) - v2_angle)
-
-
-		new_angle_b = normalise_angle(180 - angle_v_to_fov - angle_a)
-		print("angle a is", angle_a)
-		print("angle b is", new_angle_b)
-		distance_to_v = distance_to_v * np.sin(np.deg2rad(angle_a)) / np.sin(np.deg2rad(new_angle_b))
-		print("angle v to fov is", angle_v_to_fov)
-		print("sin angle a is", np.sin(np.deg2rad(angle_a)))
-		print("sin angle b is", np.sin(np.deg2rad(new_angle_b)))
-		print("distance_to_v is now", distance_to_v)
-		return distance_to_v

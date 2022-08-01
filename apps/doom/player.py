@@ -60,16 +60,16 @@ class Player:
 		self.y = thing.y
 		self.angle = normalise_angle(thing.angle)
 
-		# Debug
-		self.x = 815
-		self.y = -3152
-		self.angle = normalise_angle(200)
+		# # Debug
+		# self.x = 1038
+		# self.y = -3513
+		# self.angle = normalise_angle(161)
 
 
 	def angle_to_vertex(self, vertex):
 		v_dx = vertex.x - self.x
 		v_dy = vertex.y - self.y
-		return normalise_angle(np.rad2deg(np.arctan2(v_dy, v_dx)))
+		return normalise_angle(np.rad2deg(np.arctan2(v_dy, v_dx)) - self.angle)
 
 	def distance_to_vertex(self, vertex):
 		v_dx = vertex.x - self.x

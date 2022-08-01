@@ -167,49 +167,6 @@ class Batch:
 			draw_region[1:-1, 1:-1] = center_space
 
 
-		# # If any x or y coords are the same, indexing [x:x] won't give
-		# #  anything, so we need to address slightly differently
-		# if x1 == x2 and y1 == y2:
-		# 	self.draw_pixel(x1, y1, colour, under=under)
-		# elif x1 == x2:
-		# 	# draw_region = self.pending[y1:y2+1,x1:x1+1]
-		# 	draw_region = self._get_draw_region(x1,x2,y1,y2)
-		# 	if under:
-		# 		draw_region[draw_region == self.NO_CHANGE] = colour
-		# 	else:
-		# 		draw_region[:] = colour
-
-		# elif y1 == y2:
-		# 	# draw_region = self.pending[y1:y1+1,x1:x2+1]
-		# 	draw_region = self._get_draw_region(x1,x2,y1,y2)
-		# 	if under:
-		# 		draw_region[draw_region == self.NO_CHANGE] = colour
-		# 	else:
-		# 		draw_region[:] = colour
-
-		# elif fill:
-		# 	# draw_region = self.pending[y1:y2+1, x1:x2+1]
-		# 	draw_region = self._get_draw_region(x1,x2,y1,y2)
-		# 	if under:
-		# 		draw_region[draw_region == self.NO_CHANGE] = colour
-		# 	else:
-		# 		draw_region[:] = colour
-
-		# else:
-		# 	# Draw 4 boxes, one for each border
-		# 	# draw_region = self.pending[y1:y2+1, x1:x2+1]
-		# 	draw_region = self._get_draw_region(x1,x2,y1,y2)
-		# 	center_space = draw_region[1:-1, 1:-1].copy()
-
-		# 	if under:
-		# 		draw_region[draw_region == self.NO_CHANGE] = colour
-		# 	else:
-		# 		draw_region[:] = colour
-
-		# 	# Restore the center space
-		# 	draw_region[1:-1, 1:-1] = center_space
-
-
 	def _get_draw_region(self, x1, x2, y1, y2):
 		x1 = np.clip(x1, 0, self.width)
 		x2 = np.clip(x2, 0, self.width)
@@ -269,7 +226,6 @@ class Screen:
 
 		self.width  = np.clip(width, 0, 320)
 		self.height = np.clip(height*2, 0, 200)
-		print(f"Created screen of size ({self.width}x{self.height})")
 
 		self.canvas  = np.zeros((self.height, self.width), dtype=int)
 		self.pending = np.empty((self.height, self.width), dtype=int)
