@@ -3,6 +3,7 @@ from itertools import count, filterfalse
 
 from apps.shells import TestShell
 from apps.chat import BasicChatApp
+from apps.doom import DoomGame
 
 from data_types import DataReader
 from messages import (
@@ -14,6 +15,13 @@ from messages import (
 	SSH_MSG_CHANNEL_EOF,
 	SSH_MSG_CHANNEL_CLOSE)
 
+
+
+APPS = {
+	# "shell": TestShell,
+	"shell": DoomGame,
+	"chat": None
+}
 
 
 class ChannelHandler:
@@ -267,7 +275,10 @@ class SessionChannel:
 			# This message will request that the user's default shell
 			#  (typically defined in /etc/passwd in UNIX systems) be
 			#  started.
-			return self.start_app(BasicChatApp)
+			app_class = APPS.get("shell")
+			if app_class is None:
+				return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
+			return self.start_app(app_class)
 
 		# SSH-CONNECT 6.5.
 		elif request_type == "exec":
@@ -296,12 +307,11 @@ class SessionChannel:
 			#  initialization scripts, etc. This spurious output from
 			#  the shell may be filtered out either at the server or at
 			#  the client.
-			if subsystem_name == "test":
-				return self.start_app(TestShell)
-
-			else:
+			app_class = APPS.get(subsystem_name)
+			if app_class is None:
 				print(f" [!] Client requested 'subsystem:' Sybsystem name={subsystem_name}")
 				return SSH_MSG_CHANNEL_FAILURE(self.client_channel_id)
+			return self.start_app(app_class)
 
 		# SSH-CONNECT 6.7.
 		elif request_type == "window-change":
@@ -527,8 +537,8 @@ class PseudoTerminalConfig:
 
 			# Unhandled op code
 			else:
-				unhandled_opcodes.append(opcode)
-				_ = r.read_uint32()
+				value = r.read_uint32()
+				unhandled_opcodes.append((opcode, value))
 
 		if unhandled_opcodes:
 			print(" [!] Unhandled opcodes:", unhandled_opcodes)

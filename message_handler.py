@@ -7,10 +7,10 @@ from os import urandom
 from messages import SSH_MSG
 
 
-# # Exception class used to pass a descriptive error up to client handler
-# class ClientDisconnectedError(Exception): # UNUSED
-# 	...
-
+# Flags for if we want to print `-> Sending SEQ:x, MSGTYPE` or the
+#  equivalent for receiving messages
+PRINT_RECEIVED_MESSAGES = False
+PRINT_SENT_MESSAGES = False
 
 
 class MessageHandler:
@@ -168,7 +168,7 @@ class MessageHandler:
 
 		# Turn into an SSH msg
 		msg = SSH_MSG.read_msg(payload)
-		print(f" <- Received SEQ:{self._client_sequence_number}, {msg.__class__.__name__}")
+		if PRINT_RECEIVED_MESSAGES: print(f" <- Received SEQ:{self._client_sequence_number}, {msg.__class__.__name__}")
 
 		# Store the sequence number in the message as we may need it if
 		#  this method is unimplemented.
@@ -210,7 +210,7 @@ class MessageHandler:
 		full_packet = data + mac
 
 		# Increment the server-side sequence number and send
-		print(f" -> Sending SEQ:{self._server_sequence_number}, {msg.__class__.__name__}")
+		if PRINT_SENT_MESSAGES: print(f" -> Sending SEQ:{self._server_sequence_number}, {msg.__class__.__name__}")
 		self.increment_server_sequence_number()
 		
 		# We can release the sequence number now as we don't access or
